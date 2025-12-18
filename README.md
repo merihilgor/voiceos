@@ -95,6 +95,8 @@ We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) 
 **VoiceOS** is architecturally inspired by the **[OpenVoiceOS](https://openvoiceos.org)** ecosystem.
 While our tech stack differs (Node.js/React vs. Python/Qt), we aim to adopt their modular event-bus architecture and contribute back to the open voice ecosystem where possible.
 
+📄 **[Read the Full Research Report](docs/research/openvoiceos_integration.md)**
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
