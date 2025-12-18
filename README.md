@@ -55,6 +55,7 @@ The system transforms how you interact with your computing devices. Instead of n
     *   Multi-step reasoning loops.
     *   User feedback mechanisms.
     *   Latency optimization.
+    *   **Eye Tracking**: Cursor control via eye movement (multimodal input).
     *   **Tauri Migration**: Transition to Tauri for native performance and small binary size.
 
 ### Phase 3: Future Ideas & Expansion

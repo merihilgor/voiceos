@@ -26,6 +26,7 @@ VoiceOS is a platform for multimodal AI agents that act as a middleman between y
 🚀 **Roadmap & Help Needed**
 We are currently in Phase 1 (macOS MVP) and looking for contributors to help us reach the next level. We specifically need help with:
 *   **Tauri Migration**: We plan to move from a web-based interface to Tauri for better native performance and smaller binary sizes.
+*   **Eye Tracking**: Integrating eye-gaze control for a truly multimodal hands-free experience.
 *   **Accessibility Logic**: Improving how we hook into macOS AXAPI to make the control loop smoother.
 *   **Security**: We are integrating with Jarwis AI for security audits, but we need more eyes on data masking and privacy (PII protection).
 *   **Windows/Linux Support**: Future-proofing the architecture for cross-platform support.
