@@ -10,6 +10,9 @@
 The system transforms how you interact with your computing devices. Instead of navigating menus and clicking buttons, you simply talk to your OS. It uses Google's Gemini models to understand your intent and native accessibility APIs to execute actions on your behalf.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Website](https://img.shields.io/badge/Website-Live-blue)](https://merihilgor.github.io/voiceos/)
+
+🌐 **[View Live Website](https://merihilgor.github.io/voiceos/)**
 
 ## Concept
 **Juvenile** (the current VoiceOS release) is an **AI Agent acting as a middleman between user voice and OS functions**. The system translates natural voice commands into operating system actions through Google's Gemini models, enabling fully hands-free computer control.
