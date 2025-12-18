@@ -88,6 +88,10 @@ The system transforms how you interact with your computing devices. Instead of n
 ## Contributing
 We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) to get started.
 
+## Acknowledgements
+**VoiceOS** is architecturally inspired by the **[OpenVoiceOS](https://openvoiceos.org)** ecosystem.
+While our tech stack differs (Node.js/React vs. Python/Qt), we aim to adopt their modular event-bus architecture and contribute back to the open voice ecosystem where possible.
+
 ## Run Locally
 
 **Prerequisites:**  Node.js

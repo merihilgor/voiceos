@@ -1,0 +1,11 @@
+{
+    "name": "voiceos-message-bus",
+    "version": "0.0.1",
+    "description": "WebSocket-based event bus for VoiceOS components",
+    "main": "index.js",
+    "type": "module",
+    "dependencies": {
+        "ws": "^8.16.0",
+        "mitt": "^3.0.1"
+    }
+}
