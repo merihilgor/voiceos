@@ -1,0 +1,8 @@
+{
+  "name": "VoiceOS - Next Gen Interface",
+  "description": "A conceptual Voice-First Operating System interface styled after MacOS, powered by Gemini Live API for real-time control.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
