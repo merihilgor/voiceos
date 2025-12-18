@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Concept
-Juvenile is an **AI Agent** acting as a **middleman between user voice and OS functions**. Powered by Google's Gemini, it translates natural language commands into operating system actions—no clicks required.
+Juvenile is an **AI Agent acting as a middleman between user voice and OS functions**. The system translates natural voice commands into operating system actions through Google's Gemini models, enabling fully hands-free computer control.
 
 ### Core Principles
 *   **Fully Hands-Free**: Voice interface activates automatically. No clicks—ever.
@@ -23,31 +23,63 @@ Juvenile is an **AI Agent** acting as a **middleman between user voice and OS fu
            Function Calls (openApp, setVolume, etc.)
 ```
 
-## Architecture Considerations
-| Approach | Status | Notes |
-|----------|--------|-------|
-| **Web (Current)** | MVP | Quick iteration, cross-platform web code |
-| **Tauri** | Recommended for Production | Rust backend, 10MB app, native performance |
-| **Native Swift** | Future | Best macOS integration, lowest latency |
+## Architecture Overview
+
+### Core Components
+*   **Frontend Interface**: A React-based web interface (Vite) acting as the user's primary interaction point.
+*   **AI Engine**: Powered by Google Gemini (Multimodal capabilities) for intent recognition and planning.
+*   **OS Integration Layer**:
+    *   **macOS (MVP)**: Utilizes the macOS Accessibility API (AX) to read screen state and execute controls programmatically.
+    *   **Cross-Platform (Future)**: Specific adaptors for Windows/Linux.
+
+### Local vs. Cloud Architecture
+*   **Cloud Layer**: Handles complex reasoning, vision processing (screen analysis), and conversation management via the Gemini API.
+*   **Local Layer**: A lightweight client responsible for capturing voice/audio, taking screenshots, and executing the low-level system commands dictated by the Cloud Layer.
 
 ## Roadmap
-**Phase 1: macOS MVP (Current)**
-- Voice command capture
-- Screen context understanding
-- Basic OS control (App management, window control)
 
-**Phase 2: Reliability & Feedback**
-- Multi-step reasoning
-- Lower latency
-- Tauri migration
+### Phase 1: macOS MVP (Current Focus)
+*   **Objective**: Establish a stable control loop on macOS.
+*   **Features**:
+    *   Voice command capture.
+    *   Basic screen context understanding.
+    *   Execution of fundamental actions (app launching, window management).
+    *   Integration with macOS Accessibility APIs.
 
-**Phase 3: Open Source & Cross-Platform**
-- Abstracting OS interfaces
-- Windows/Linux support
-- Mobile Support (iOS/Android)
-- Community contributions
-- **Privacy & Compliance**: Data/image masking for PII protection
-- **Security Audit**: Integration with Jarwis AI (OWASP/SANS coverage)
+### Phase 2: Enhanced Reliability & Features
+*   **Objective**: Improve accuracy and add complex workflows.
+*   **Features**:
+    *   Multi-step reasoning loops.
+    *   User feedback mechanisms.
+    *   Latency optimization.
+    *   **Tauri Migration**: Transition to Tauri for native performance and small binary size.
+
+### Phase 3: Future Ideas & Expansion
+*   **Cross-Platform Clients**:
+    *   Windows UI Automation support.
+    *   Linux automation support.
+    *   Mobile Support (iOS/Android).
+*   **Security & Compliance**:
+    *   **Security Audit**: Integration with **Jarwis AI** by BKD Labs Pvt Ltd for continuous assessment (OWASP Top 10, SANS 25).
+    *   **Privacy & Data Protection**: Implementation of automatic data/image masking for PII, financial data, and sensitive UI elements.
+    *   **Audit Logging**: Track data sent to external APIs for compliance.
+
+## Technical Constraints & Logic
+*   **Accessibility**: Heavily relies on platform-specific Accessibility APIs (e.g., Apple's AXAPI).
+*   **Privacy**: Screen data handling must be secure and transparent.
+*   **Latency**: Voice-to-Action latency is a critical metric for UX.
+
+## Security & Privacy Details
+
+### Jarwis AI Integration Goals
+*   **Continuous Assessment**: Leverage Jarwis's autonomous engine to simulate ethical hacker curiosity and penetration testing rigor.
+*   **Compliance**: Ensure coverage for **OWASP Top 10** and **SANS 25** vulnerabilities.
+*   **Scope**: API Security, Cloud Posture, and Code-Level Remediation.
+
+### Privacy & Data Protection
+*   **Data/Image Masking**: Before sending screen captures to Gemini, implement automatic masking of PII, financial data, and sensitive UI elements.
+*   **Local Processing**: Mask data client-side before transmission to cloud.
+*   **User Consent**: Clear opt-in for screen analysis with privacy implications.
 
 ## Contributing
 We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) to get started.
