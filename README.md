@@ -2,14 +2,17 @@
 <img width="600" alt="Juvenile Banner" src="./istockphoto-538980297-1024x1024.jpg" />
 </div>
 
-# Juvenile (Voice AI OS Interface)
+# VoiceOS: Juvenile Release
 
-**Juvenile** is a next-generation multimodal AI interface that transforms how you interact with your computing devices. Instead of navigating menus and clicking buttons, you simply talk to your OS. It uses Google's Gemini models to understand your intent and native accessibility APIs to execute actions on your behalf.
+**VoiceOS** is a next-generation multimodal AI operating system interface.
+**Juvenile** is the current release codename (macOS MVP).
+
+The system transforms how you interact with your computing devices. Instead of navigating menus and clicking buttons, you simply talk to your OS. It uses Google's Gemini models to understand your intent and native accessibility APIs to execute actions on your behalf.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Concept
-Juvenile is an **AI Agent acting as a middleman between user voice and OS functions**. The system translates natural voice commands into operating system actions through Google's Gemini models, enabling fully hands-free computer control.
+**Juvenile** (the current VoiceOS release) is an **AI Agent acting as a middleman between user voice and OS functions**. The system translates natural voice commands into operating system actions through Google's Gemini models, enabling fully hands-free computer control.
 
 ### Core Principles
 *   **Fully Hands-Free**: Voice interface activates automatically. No clicks—ever.

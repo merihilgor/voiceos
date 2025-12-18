@@ -1,9 +1,17 @@
-# Contributing to Juvenile (Voice AI OS)
+# Contributing to VoiceOS
 
 First off, thanks for taking the time to contribute!
 
+## Why Contribute?
+By contributing to **VoiceOS** (specifically the **Juvenile** release), you are helping to build a true "Voice OS" that empowers people with motor impairments, RSI, or disabilities to use computers more effectively. This is not just an AI wrapper—it's an assistive technology tool that aims to restore digital independence.
+
+Plus, you'll get to work with cutting-edge tech:
+*   **Multimodal AI Agents** (Google Gemini)
+*   **Native OS Automation** (Accessibility APIs)
+*   **Cross-Platform Architecture** (Standardizing control loops)
+
 ## Core Design Principle: Accessibility-First
-Juvenile is designed for users who **cannot perform mouse clicks**. All features must be operable via voice commands alone.
+**VoiceOS (Juvenile)** is designed for users who **cannot perform mouse clicks**. All features must be operable via voice commands alone.
 
 > **Any contribution that introduces a click-required interaction will be rejected.**
 

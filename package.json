@@ -1,7 +1,20 @@
 {
-  "name": "juvenile-voice-ai-os",
-  "private": true,
+  "name": "voiceos",
   "version": "0.0.0",
+  "description": "VoiceOS is a multimodal AI operating system interface. Current Release: Juvenile (macOS MVP).",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/merihilgor/voiceos"
+  },
+  "keywords": [
+    "ai",
+    "voice",
+    "macos",
+    "accessibility",
+    "gemini",
+    "automation"
+  ],
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
