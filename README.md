@@ -2,7 +2,7 @@
 <img width="600" alt="Juvenile Banner" src="./istockphoto-538980297-1024x1024.jpg" />
 </div>
 
-# VoiceOS: Juvenile Release
+# VoiceOS: Juvenile Release — The Sound of Silence
 
 **VoiceOS** is a next-generation multimodal AI operating system interface.
 **Juvenile** is the current release codename (macOS MVP).
