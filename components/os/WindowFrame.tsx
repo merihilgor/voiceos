@@ -58,6 +58,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, onClose, 
 
   return (
     <div
+      data-testid={`window-${win.id}`}
       style={{
         left: position.x,
         top: position.y,
@@ -69,19 +70,19 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({ window: win, onClose, 
       onMouseDown={() => onFocus()}
     >
       {/* Title Bar */}
-      <div 
+      <div
         className="h-8 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center px-4 cursor-default select-none"
         onMouseDown={handleMouseDown}
       >
         <div className="flex space-x-2 group">
           <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-black/50 overflow-hidden">
-             <X size={8} className="opacity-0 group-hover:opacity-100" />
+            <X size={8} className="opacity-0 group-hover:opacity-100" />
           </button>
           <button onClick={(e) => { e.stopPropagation(); onMinimize(); }} className="w-3 h-3 rounded-full bg-yellow-500 hover:bg-yellow-600 flex items-center justify-center text-black/50 overflow-hidden">
-             <Minus size={8} className="opacity-0 group-hover:opacity-100" />
+            <Minus size={8} className="opacity-0 group-hover:opacity-100" />
           </button>
           <button className="w-3 h-3 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center text-black/50 overflow-hidden">
-             <Square size={6} className="opacity-0 group-hover:opacity-100" fill="currentColor" />
+            <Square size={6} className="opacity-0 group-hover:opacity-100" fill="currentColor" />
           </button>
         </div>
         <div className="flex-1 text-center text-xs font-semibold text-gray-500 dark:text-gray-400">

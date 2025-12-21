@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FunctionDeclaration, Type, GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
+import { MockGeminiService } from './services/MockGeminiService';
 import { WindowFrame } from './components/os/WindowFrame';
 import { Dock } from './components/os/Dock';
 import { VoiceOrb } from './components/ui/VoiceOrb';
@@ -46,10 +47,15 @@ export default function App() {
 
   // --- OS Actions ---
   const openApp = useCallback((appId: string) => {
+    console.log(`App.tsx: openApp called for ${appId}`);
     const app = apps.find(a => a.id === appId);
-    if (!app) return;
+    if (!app) {
+      console.error(`App.tsx: App not found for id ${appId}`);
+      return;
+    }
 
     setWindows(prev => {
+      console.log(`App.tsx: Updating windows state. Current count: ${prev.length}`);
       const existing = prev.find(w => w.id === appId);
       if (existing) {
         // Bring to front if already open
@@ -175,9 +181,16 @@ export default function App() {
       setIsThinking(false);
 
       // Debug: Log API Key presence
+      // Check for Mock Mode
+      const urlParams = new URLSearchParams(window.location.search);
       const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      const envMock = import.meta.env.VITE_MOCK_MODE === 'true';
+      const useMock = urlParams.get('mock') === 'true' || envMock || !apiKey;
+
       console.log("API Key present:", !!apiKey);
-      if (!apiKey) {
+      console.log("Mock Mode:", useMock);
+
+      if (!apiKey && !useMock) {
         console.error("ERROR: No API key found. Set GEMINI_API_KEY in .env.local");
         setIsVoiceActive(false);
         return;
@@ -192,7 +205,9 @@ export default function App() {
       audioStreamRef.current = stream;
       console.log("Microphone access granted");
 
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = useMock
+        ? new MockGeminiService({ apiKey: "mock" })
+        : new GoogleGenAI({ apiKey: apiKey! });
 
       console.log("Connecting to Gemini Live...");
       const sessionPromise = ai.live.connect({
@@ -271,19 +286,32 @@ export default function App() {
                 let result: { result?: string; error?: string } = { result: 'ok' };
 
                 // Execute Action
-                if (fc.name === 'openApp' || fc.name === 'closeApp' || fc.name === 'setVolume') {
+                if (fc.name === 'openApp') {
+                  const appId = (fc.args as any).appId;
+                  openApp(appId); // Call local UI function
                   try {
-                    const response = await fetch('/api/execute', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(fc.args)
-                    });
-                    const data = await response.json();
-                    result = { result: data.result || 'executed' };
-                  } catch (err) {
-                    console.error('Backend Error:', err);
-                    result = { error: 'Failed to execute OS command' };
-                  }
+                    // Also try backend for real OS effect (optional, maybe skip in mock mode?)
+                    if (!useMock) {
+                      await fetch('/api/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(fc.args)
+                      });
+                    }
+                  } catch (e) { console.error(e); }
+                } else if (fc.name === 'closeApp') {
+                  const appId = (fc.args as any).appId;
+                  closeApp(appId);
+                } else if (fc.name === 'setVolume') {
+                  const level = (fc.args as any).level;
+                  updateVolume(level);
+                }
+
+                if (fc.name === 'openApp' || fc.name === 'closeApp' || fc.name === 'setVolume') {
+                  // Legacy block or backend call block - we handled it above individually for UI
+                  // We can remove the old block or keep it for result object construction
+                  // Let's just construct result here
+                  result = { result: 'executed' };
                 } else if (fc.name === 'setTheme') {
                   toggleTheme((fc.args as any).mode);
                 } else if (fc.name === 'controlMedia') {
@@ -400,6 +428,22 @@ export default function App() {
         className="absolute inset-0 z-0 bg-cover bg-center transition-opacity duration-1000"
         style={{ backgroundImage: `url(${WALLPAPER_URL})`, opacity: theme === 'dark' ? 0.6 : 0.9 }}
       />
+
+      {/* Desktop / Windows Layer */}
+      <div className="absolute inset-0 z-0 pointer-events-auto">
+        {windows.map(window => (
+          <WindowFrame
+            key={window.id}
+            window={window}
+            onClose={() => closeApp(window.id)}
+            onMinimize={() => setWindows(prev => prev.map(w => w.id === window.id ? { ...w, isMinimized: true } : w))}
+            onFocus={() => {
+              setActiveWindowId(window.id);
+              setWindows(prev => prev.map(w => w.id === window.id ? { ...w, zIndex: Date.now() } : w));
+            }}
+          />
+        ))}
+      </div>
 
       {/* Minimal Voice-Only UI */}
       <div className="relative z-10 h-full flex flex-col items-center justify-center">

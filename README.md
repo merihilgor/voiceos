@@ -107,3 +107,9 @@ While our tech stack differs (Node.js/React vs. Python/Qt), we aim to adopt thei
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Mock Mode (Development)
+If your API quota is exceeded or you want to test without an API key:
+1.  **Automatic**: The app starts in Mock Mode by default if `VITE_MOCK_MODE=true` is in `.env.local`.
+2.  **Manual**: Open `http://localhost:3000/?mock=true`
+3.  **Walkthrough**: See [mock-mode-walkthrough.md](mock-mode-walkthrough.md) for details.
