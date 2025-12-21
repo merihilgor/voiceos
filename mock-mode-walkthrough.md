@@ -1,39 +1,30 @@
 # Mock Mode & Stability Fixes
 
-I have implemented a **Mock Mode** for VoiceOS to allow development and testing even when the Gemini API quota is exceeded. I also fixed a critical bug where application windows were not rendering.
+I have implemented a **Mock Mode** for VoiceOS to allow development and testing even when the Gemini API quota is exceeded.
 
-## Changes
+## Interactive Mock Mode (`?mock=true`)
 
-### 1. Mock Mode (`?mock=true`)
-- **New Service**: `src/services/MockGeminiService.ts` simulates the Gemini Live API.
-- **Behavior**:
-    - Connects immediately without an API key.
-    - Simulates a "Listening" state.
-    - After 2 seconds, speaks a greeting.
-    - After 8 seconds, automatically opens the **Notes** app (for testing).
-- **Usage**: Add `?mock=true` to your URL (e.g., `http://localhost:3000/?mock=true`), or set `VITE_MOCK_MODE=true` in `.env.local`.
+When you run `npm run dev`, the app starts in Mock Mode by default (configured via `.env.local`).
 
-### 2. UI Fixes
-- **Restored Window Rendering**: The desktop layer was missing from `App.tsx`. I added the mapping logic to render `WindowFrame` components, so opening apps now correctly shows the window.
-- **Local App Execution**: Modified `App.tsx` to handle `openApp` commands locally in the UI state, ensuring responsiveness even without a backend connection.
+### Features
+1.  **Text Input Simulation**: A standard text box appears below the "Listening..." indicator.
+2.  **App Control**: You can type commands like **"Open Calculator"** or **"Open Notes"** to simulate voice commands.
+3.  **No API Key Needed**: This mode works entirely offline.
 
-### 3. Automated Testing
-- **New Test**: `tests/mock_mode.spec.ts` verifies the full loop:
-    1. Loads app in Mock Mode.
-    2. Grants microphone permissions.
-    3. Connects successfully.
-    4. Waits for the simulated "Open Notes" command.
-    5. Verifies the "Notes" window appears.
+### Included Apps for Testing
+- **Calculator**: (New) Created specifically for testing interactive commands.
+- **Notes**: Standard test app.
+- **Terminal, Browser, Gallery, Music, System**: Also available.
 
 ## Verification
 
-The Mock Mode flow was verified using Playwright:
+You can verify the functionality by running the end-to-end test:
 
 ```bash
 npx playwright test tests/mock_mode.spec.ts
 ```
 
-Result: `1 passed`
+Result: `1 passed` (Tested typing "open calculator" -> Verification that Calculator Window appears).
 
 ## How to Run
 
@@ -41,6 +32,5 @@ Result: `1 passed`
     ```bash
     npm run dev
     ```
-2.  Open in browser:
-    *   **Default**: If `VITE_MOCK_MODE=true` is set, it opens in Mock Mode.
-    *   **Manual**: Add `?mock=true` to force it: **[http://localhost:3000/?mock=true](http://localhost:3000/?mock=true)**
+2.  Open **[http://localhost:3000](http://localhost:3000)**
+3.  Type `open calculator` in the input box and press Enter.

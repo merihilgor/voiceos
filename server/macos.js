@@ -27,8 +27,13 @@ export async function executeJXA(script) {
 
 // Helper to open an app by name
 export async function openApp(appName) {
-    const script = `Application('${appName}').activate()`;
-    return executeJXA(script);
+    // Legacy: const script = `Application('${appName}').activate()`;
+    // return executeJXA(script);
+
+    // Safer/Simpler implementation (does not require JXA/AppleEvents permission, just LaunchServices)
+    const command = `open -a "${appName}"`;
+    const { stdout } = await execPromise(command);
+    return stdout;
 }
 
 // Helper to close an app by name

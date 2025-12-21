@@ -21,29 +21,31 @@ export class MockGeminiService {
 
                 console.log("MockGeminiService: Connecting...");
 
-                // Simulate network delay
-                setTimeout(() => {
-                    this.isConnected = true;
-                    if (this.onopen) this.onopen();
+                // Connect immediately to handle fast inputs
+                this.isConnected = true;
 
-                    // Start a loop to simulate occasional "thinking" and tool calls
+                // Simulate brief network delay for lifecycle events
+                setTimeout(() => {
+                    if (this.onopen) this.onopen();
                     this.startSimulationLoop();
-                }, 800);
+                }, 100);
 
                 return {
                     sendRealtimeInput: (input: { media: { payload: string; mimeType: string } }) => {
-                        // In mock mode, we ignore audio input but log it
-                        // console.log("MockGeminiService: Received audio input chunk");
+                        // In mock mode, we ignore audio input
                     },
                     sendToolResponse: (response: any) => {
                         console.log("MockGeminiService: Received tool response", response);
-                        // After a tool response, maybe say something back
-                        this.simulateResponse("Action executed successfully.");
+                        this.simulateResponse("Action executed.");
                     },
                     disconnect: () => {
                         this.isConnected = false;
                         this.cleanup();
                         if (this.onclose) this.onclose({ code: 1000, reason: "Mock Disconnect" });
+                    },
+                    // Custom method for Mock Mode interaction
+                    sendText: (text: string) => {
+                        this.processTextCommand(text);
                     }
                 };
             }
@@ -51,34 +53,62 @@ export class MockGeminiService {
     }
 
     private startSimulationLoop() {
-        // 1. Simulate an initial greeting after 2 seconds
+        // 1. Simulate an initial greeting after 1.5 seconds
         this.timers.push(setTimeout(() => {
-            this.simulateResponse("Hello! I am running in Mock Mode. I can't really hear you, but I can open apps.");
-        }, 2000));
+            this.simulateResponse("Mock Mode Online. Type a command to test.");
+        }, 1500));
+    }
 
-        // 2. Simulate opening an app after 8 seconds (demo)
-        this.timers.push(setTimeout(() => {
-            this.simulateToolCall("openApp", { appId: "notes" });
-        }, 8000));
+    private processTextCommand(text: string) {
+        console.log(`MockGeminiService: Processing command: "${text}"`);
+        const lower = text.toLowerCase();
+
+        if (lower.includes('open')) {
+            const apps = ['notes', 'terminal', 'browser', 'gallery', 'media', 'system', 'calculator'];
+
+            let appId = apps.find(a => lower.includes(a));
+            if (appId === 'system') appId = 'settings';
+
+            // "Real" Calculator Support
+            // If user explicitly says "real" and "calculator", we send "Calculator" (Capitalized).
+            // This tells App.tsx to still try opening the local 'calculator' app (Mock UI),
+            // BUT the backend call inside App.tsx (which we enabled) will send { appId: "Calculator" }.
+            // The backend's `openApp` uses `Application(appName).activate()`.
+            // "Calculator" is the correct name for the macOS app.
+            if (lower.includes('real') && appId === 'calculator') {
+                this.simulateToolCall('openApp', { appId: 'Calculator' });
+                return;
+            }
+
+            if (appId) {
+                this.simulateToolCall('openApp', { appId });
+                return;
+            }
+        }
+
+        if (lower.includes('close')) {
+            const apps = ['notes', 'terminal', 'browser', 'gallery', 'media', 'system', 'settings'];
+            let appId = apps.find(a => lower.includes(a));
+            if (appId === 'system') appId = 'settings';
+
+            if (appId) {
+                this.simulateToolCall('closeApp', { appId });
+                return;
+            }
+        }
+
+        this.simulateResponse(`I heard "${text}", but I don't have a mock action for that.`);
     }
 
     private simulateResponse(text: string) {
         if (!this.isConnected || !this.onmessage) return;
 
-        // We can't easily simulate audio blobs without a real file, 
-        // strictly speaking we should send a ModelTurn with audio data.
-        // For now, we will just send a text part which might not be handled by the audio-only UI,
-        // but the onmessage handler in App.tsx mainly looks for `serverContent?.modelTurn?.parts?.[0]?.inlineData?.data`
-        // or `toolCall`.
-
-        // Attempting to send a dummy message structure
-        // Since App.tsx expects audio data for "speaking", we might just trigger the "Thinking" state toggle.
-
+        // Send text response
         const msg = {
             serverContent: {
                 turnComplete: true,
                 modelTurn: {
-                    parts: []
+                    parts: [{ text: text }]
                 }
             }
         };

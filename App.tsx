@@ -10,10 +10,11 @@ import { BrowserApp } from './components/apps/BrowserApp';
 import { GalleryApp } from './components/apps/GalleryApp';
 import { MediaApp } from './components/apps/MediaApp';
 import { SystemApp } from './components/apps/SystemApp';
+import { CalculatorApp } from './components/apps/CalculatorApp';
 import { APP_ICONS, WALLPAPER_URL } from './constants';
 import { WindowState, ThemeMode, AppDefinition } from './types';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioUtils';
-import { Battery, Wifi, Search, Command } from 'lucide-react';
+import { Battery, Wifi, Search, Command, Calculator } from 'lucide-react';
 
 const apps: AppDefinition[] = [
   { id: 'notes', name: 'Notes', icon: APP_ICONS.notes, component: <NoteApp /> },
@@ -22,6 +23,7 @@ const apps: AppDefinition[] = [
   { id: 'gallery', name: 'Gallery', icon: APP_ICONS.gallery, component: <GalleryApp /> },
   { id: 'media', name: 'Music', icon: APP_ICONS.media, component: <MediaApp /> },
   { id: 'settings', name: 'System', icon: APP_ICONS.system, component: <SystemApp /> },
+  { id: 'calculator', name: 'Calculator', icon: <Calculator size={24} />, component: <CalculatorApp /> },
 ];
 
 export default function App() {
@@ -288,17 +290,25 @@ export default function App() {
                 // Execute Action
                 if (fc.name === 'openApp') {
                   const appId = (fc.args as any).appId;
-                  openApp(appId); // Call local UI function
+                  const isRealApp = appId[0] === appId[0].toUpperCase(); // "Calculator" vs "calculator"
+
+                  if (!isRealApp) {
+                    openApp(appId.toLowerCase()); // Call local UI function only for lowercase IDs
+                  }
+
                   try {
-                    // Also try backend for real OS effect (optional, maybe skip in mock mode?)
-                    if (!useMock) {
-                      await fetch('/api/execute', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(fc.args)
-                      });
-                    }
-                  } catch (e) { console.error(e); }
+                    // Try backend for real OS effect if server is running
+                    await fetch('/api/execute', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: fc.name,
+                        params: fc.args
+                      })
+                    });
+                  } catch (e) {
+                    console.warn("Backend unavailable or command failed", e);
+                  }
                 } else if (fc.name === 'closeApp') {
                   const appId = (fc.args as any).appId;
                   closeApp(appId);
@@ -419,6 +429,59 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Speech Recognition for Mock Mode (Voice-to-Text)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    const envMock = (import.meta as any).env.VITE_MOCK_MODE === 'true';
+    const useMock = urlParams.get('mock') === 'true' || envMock || !apiKey;
+
+    if (!useMock || !session) return;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn("Speech Recognition not supported in this browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event: any) => {
+      const last = event.results.length - 1;
+      const transcript = event.results[last][0].transcript.trim();
+      console.log("Voice Recognized:", transcript);
+
+      if (transcript && session) {
+        session.then((s: any) => {
+          if (s.sendText) s.sendText(transcript);
+        });
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech Recognition Error:", event.error);
+      // Restart on error (except for 'no-speech')
+      if (event.error !== 'no-speech') {
+        setTimeout(() => recognition.start(), 500);
+      }
+    };
+
+    recognition.onend = () => {
+      // Restart to keep listening continuously
+      recognition.start();
+    };
+
+    recognition.start();
+    console.log("Mock Mode: Speech Recognition started.");
+
+    return () => {
+      recognition.stop();
+    };
+  }, [session]);
+
   // --- Rendering ---
   return (
     <div className={`h-screen w-screen overflow-hidden transition-colors duration-500 ${theme === 'dark' ? 'dark bg-black text-white' : 'bg-gray-100 text-black'}`}>
@@ -457,13 +520,24 @@ export default function App() {
         />
 
         {/* Status Text */}
-        <div className="mt-6 text-center text-sm font-light">
+        <div className="mt-6 text-center text-sm font-light flex flex-col items-center gap-4 max-w-md">
           {errorMessage ? (
-            <div className="bg-red-500/20 border border-red-500/50 rounded-lg px-6 py-3 max-w-md">
+            <div className="bg-red-500/20 border border-red-500/50 rounded-lg px-6 py-3">
               <p className="text-red-200 font-medium">⚠️ {errorMessage}</p>
             </div>
           ) : isVoiceActive ? (
-            <p className="opacity-70">Listening... Say a command like "Open Calculator"</p>
+            <>
+              <p className="text-lg opacity-90">🎙️ Listening...</p>
+              <div className="bg-white/5 backdrop-blur-sm rounded-lg px-6 py-4 border border-white/10">
+                <p className="text-white/80 mb-3 font-medium">Voice Commands:</p>
+                <ul className="text-white/60 text-left space-y-1">
+                  <li>• "Open Calculator" – Web-based app</li>
+                  <li>• "Open <strong>Real</strong> Calculator" – macOS app</li>
+                  <li>• "Open Notes" / "Open Terminal"</li>
+                  <li>• "Close Notes"</li>
+                </ul>
+              </div>
+            </>
           ) : (
             <p className="opacity-70">Initializing voice interface...</p>
           )}
