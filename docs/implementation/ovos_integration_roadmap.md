@@ -1,6 +1,6 @@
 # OpenVoiceOS Integration Roadmap
 
-**Status**: Planning
+**Status**: Phase 1 Complete ✅
 **Target Architecture**: Hybrid (React Frontend + Python/OVOS Backend)
 
 ## Strategic Assessment
@@ -12,69 +12,79 @@ The `openvoiceos_integration_tech_spec.md` outlines a plan to integrate OVOS lib
 
 ---
 
-## Phase 1: Foundational Stabilization (The "Python Bridge")
+## Phase 1: Foundational Stabilization (The "Python Bridge") ✅ COMPLETE
 
 **Goal**: Get `ovos-core` running and talking to the React App.
 
-### 1.1 Python Infrastructure Setup
-- [ ] Create `backend/` directory.
-- [ ] Initialize Python virtual environment.
-- [ ] Create `requirements.txt` with `ovos-core`, `ovos-messagebus`, `ovos-utils`.
-- [ ] Create `backend/start_core.py` to launch the services.
+### 1.1 Python Infrastructure Setup ✅
+- [x] Create `backend/` directory.
+- [x] Initialize Python virtual environment.
+- [x] Create `requirements.txt` with PyObjC, google-generativeai dependencies.
+- [x] Create `backend/start_messagebus.py` to launch the services.
 
-### 1.2 MessageBus Implementation
-- [ ] Launch `ovos-messagebus` service.
-- [ ] Verify WebSocket connectivity (default port 8181).
+### 1.2 MessageBus Implementation ✅
+- [x] Launch WebSocket MessageBus service on port 8181.
+- [x] Verify WebSocket connectivity.
 
-### 1.3 React Frontend Integration
-- [ ] Install `ovos-websocket-client` (JS/TS adapter) or implement a raw WebSocket hook in React.
-- [ ] Create `useMessageBus` hook in `src/hooks/useMessageBus.ts`.
-- [ ] Connect `App.tsx` to the backend.
-- [ ] **Verification**: Send "speak" message from React -> Backend -> OVOS processes it (logs) -> Backend sends audio/text back (eventually).
+### 1.3 React Frontend Integration ✅
+- [x] Create `useMessageBus` hook in `src/hooks/useMessageBus.ts`.
+- [x] Connect `App.tsx` to the backend.
+- [x] Send `recognizer_loop:utterance` messages from React → Backend.
 
-### 1.4 "Migration" (Adoption)
-- [ ] Map existing frontend "Voice Capture" to send audio binaries or text transcripts to OVOS MessageBus.
-- [ ] Replace direct Gemini API calls in Frontend with intent messages sent to OVOS (which then handles Gemini via a Solvers Plugin).
+### 1.4 Context-Aware Voice Control ✅
+- [x] `context_tracker.py` - Monitor focused macOS app.
+- [x] `intent_parser.py` - Gemini-powered intent parsing with fallback.
+- [x] `action_executor.py` - Execute keystrokes/shortcuts on macOS.
+- [x] Map voice commands to OS actions (open apps, type, shortcuts).
 
 ---
 
-## Phase 2: Plugin Ecosystem
+## Phase 2: Enhanced Reliability & Wake Word (In Progress)
 
-**Goal**: Move intelligence to the Backend.
+**Goal**: Improve voice activation and expand command support.
 
-### 2.1 Solver Plugin
+### 2.1 Wake Word Listener ("Holo")
+- [ ] Install `openwakeword` and `pyaudio` dependencies.
+- [ ] Create `wake_word_listener.py` with "Holo" detection.
+- [ ] Integrate listener into MessageBus startup.
+- [ ] Update frontend to handle `wake_word:detected` events.
+
+### 2.2 Expanded Command Library
+- [ ] Browser commands: "new tab", "close tab", "refresh", "go back".
+- [ ] Window commands: "minimize", "maximize", "full screen".
+- [ ] System commands: "volume up/down", "mute".
+
+### 2.3 Audio Pipeline
+- [ ] Configure local wake word detection (OpenWakeWord).
+- [ ] Set up TTS (Text-to-Speech) for responses.
+
+---
+
+## Phase 3: Plugin Ecosystem (Future)
+
+**Goal**: Move intelligence to extensible plugins.
+
+### 3.1 Solver Plugin
 - [ ] Create `ovos-solver-gemini-plugin` (Python).
 - [ ] Configure `ovos-core` to use this plugin for fallback queries.
 
-### 2.2 Audio Pipeline
-- [ ] Configure `ovos-dinkum-listener` (if applicable on macOS) or maintain browser-based STT.
-- [ ] Set up TTS (Text-to-Speech) to play responses.
-
----
-
-## Phase 3: Hardware Abstraction (PHAL)
-
-**Goal**: System control (Volume, App Launching).
-
-### 3.1 macOS PHAL Plugin
-- [ ] Create `ovos-phal-plugin-macos` using `pyobjc` or calling system commands (`osascript`).
+### 3.2 macOS PHAL Plugin
+- [ ] Create `ovos-phal-plugin-macos` using `pyobjc`.
 - [ ] Implement Volume, Brightness, and App Launching intents.
 
 ---
 
 ## Technical Tasks (Immediate)
 
-1.  **Initialize Backend**:
+1. **Install Wake Word Dependencies**:
     ```bash
-    mkdir backend
-    cd backend
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install ovos-core ovos-messagebus ovos-utils
+    brew install portaudio
+    pip install openwakeword pyaudio
     ```
-2.  **Create Frontend Hook**:
-    *   Develop `useOvosConnection` to manage WebSocket state.
 
-3.  **Verify Loop**:
-    *   React sends `recognizer_loop:utterance` -> MessageBus -> OVOS Intent Service -> Log Output.
+2. **Create Wake Word Listener**:
+    * Develop `backend/wake_word_listener.py` for "Holo" detection.
+
+3. **Expand Fallback Parser**:
+    * Add browser, window, and system commands to mock mode.
 

@@ -1,38 +1,22 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FunctionDeclaration, Type, GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { MockGeminiService } from './services/MockGeminiService';
-import { WindowFrame } from './components/os/WindowFrame';
-import { Dock } from './components/os/Dock';
 import { VoiceOrb } from './components/ui/VoiceOrb';
-import { NoteApp } from './components/apps/NoteApp';
-import { TerminalApp } from './components/apps/TerminalApp';
-import { BrowserApp } from './components/apps/BrowserApp';
-import { GalleryApp } from './components/apps/GalleryApp';
-import { MediaApp } from './components/apps/MediaApp';
-import { SystemApp } from './components/apps/SystemApp';
-import { CalculatorApp } from './components/apps/CalculatorApp';
 import { useMessageBus } from './src/hooks/useMessageBus';
-import { APP_ICONS, WALLPAPER_URL } from './constants';
-import { WindowState, ThemeMode, AppDefinition } from './types';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioUtils';
-import { Battery, Wifi, Search, Command, Calculator } from 'lucide-react';
 
-const apps: AppDefinition[] = [
-  { id: 'notes', name: 'Notes', icon: APP_ICONS.notes, component: <NoteApp /> },
-  { id: 'terminal', name: 'Terminal', icon: APP_ICONS.terminal, component: <TerminalApp /> },
-  { id: 'browser', name: 'Browser', icon: APP_ICONS.browser, component: <BrowserApp /> },
-  { id: 'gallery', name: 'Gallery', icon: APP_ICONS.gallery, component: <GalleryApp /> },
-  { id: 'media', name: 'Music', icon: APP_ICONS.media, component: <MediaApp /> },
-  { id: 'settings', name: 'System', icon: APP_ICONS.system, component: <SystemApp /> },
-  { id: 'calculator', name: 'Calculator', icon: <Calculator size={24} />, component: <CalculatorApp /> },
-];
+// Command history type
+interface CommandHistoryItem {
+  id: number;
+  text: string;
+  result: string;
+  timestamp: Date;
+}
 
 export default function App() {
-  // OS State
-  const [theme, setTheme] = useState<ThemeMode>('dark');
-  const [volume, setVolume] = useState(50);
-  const [windows, setWindows] = useState<WindowState[]>([]);
-  const [activeWindowId, setActiveWindowId] = useState<string | null>(null);
+  // AI State
+  const [commandHistory, setCommandHistory] = useState<CommandHistoryItem[]>([]);
+  const [currentContext, setCurrentContext] = useState<string>('VoiceOS');
 
   // Voice AI State
   const [isVoiceActive, setIsVoiceActive] = useState(false);
@@ -54,80 +38,46 @@ export default function App() {
   const handleOvosIntent = useCallback((intent: string, data: Record<string, any>) => {
     console.log('OVOS Intent:', intent, data);
 
-    switch (intent) {
-      case 'open_app':
-        if (data.app) {
-          openApp(data.app);
-          // If "real" modifier, also call backend
-          if (data.real) {
-            fetch('/api/execute', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'openApp', params: { appId: data.app } })
-            }).catch(console.error);
-          }
-        }
-        break;
-      case 'close_app':
-        if (data.app) closeApp(data.app);
-        break;
-      case 'switch_language':
-        if (data.language) setSpeechLang(data.language);
-        break;
-      case 'fallback':
-        console.log('OVOS Fallback:', data.response);
-        break;
-      default:
-        console.log('Unhandled intent:', intent);
+    // Add to command history
+    const resultText = intent === 'open_app' ? `Opened ${data.app}`
+      : intent === 'close_app' ? `Closed ${data.app}`
+        : intent === 'switch_language' ? `Switched to ${data.language}`
+          : `Executed ${intent}`;
+
+    setCommandHistory(prev => [...prev, {
+      id: Date.now(),
+      text: intent,
+      result: resultText,
+      timestamp: new Date()
+    }]);
+
+    // Update context if app changed
+    if (intent === 'open_app' && data.app) {
+      setCurrentContext(data.app);
     }
+
+    // Language switch
+    if (intent === 'switch_language' && data.language) {
+      setSpeechLang(data.language);
+    }
+  }, []);
+
+  // Wake word handler - triggered when backend detects "Holo"
+  const handleWakeWord = useCallback(() => {
+    console.log('🎤 Holo detected! Activating voice...');
+    // Visual feedback - could trigger speech recognition start
+    // For now, the speech recognition is always on in mock mode
+    // In the future, this could toggle a "listening" state
   }, []);
 
   const { isConnected: isOvosConnected, sendUtterance } = useMessageBus({
     autoConnect: true,
-    onIntent: handleOvosIntent
+    onIntent: handleOvosIntent,
+    onWakeWord: handleWakeWord
   });
 
-  // --- OS Actions ---
-  const openApp = useCallback((appId: string) => {
-    console.log(`App.tsx: openApp called for ${appId}`);
-    const app = apps.find(a => a.id === appId);
-    if (!app) {
-      console.error(`App.tsx: App not found for id ${appId}`);
-      return;
-    }
-
-    setWindows(prev => {
-      console.log(`App.tsx: Updating windows state. Current count: ${prev.length}`);
-      const existing = prev.find(w => w.id === appId);
-      if (existing) {
-        // Bring to front if already open
-        return prev.map(w => w.id === appId ? { ...w, isOpen: true, isMinimized: false, zIndex: Date.now() } : w);
-      }
-      return [...prev, {
-        id: appId,
-        title: app.name,
-        isOpen: true,
-        isMinimized: false,
-        isMaximized: false,
-        zIndex: Date.now(),
-        content: app.component,
-        icon: app.icon
-      }];
-    });
-    setActiveWindowId(appId);
-  }, []);
-
-  const closeApp = useCallback((appId: string) => {
-    setWindows(prev => prev.filter(w => w.id !== appId));
-  }, []);
-
-  const toggleTheme = useCallback((mode?: ThemeMode) => {
-    setTheme(prev => mode || (prev === 'light' ? 'dark' : 'light'));
-  }, []);
-
-  const updateVolume = useCallback((vol: number) => {
-    setVolume(Math.max(0, Math.min(100, vol)));
-  }, []);
+  // Commands are now handled by the backend via MessageBus
+  // No local app/window management needed
 
   // --- Gemini Live Integration ---
 
@@ -327,70 +277,26 @@ export default function App() {
                 console.log("Tool Call:", fc.name, fc.args);
                 let result: { result?: string; error?: string } = { result: 'ok' };
 
-                // Execute Action
-                if (fc.name === 'openApp') {
-                  const appId = (fc.args as any).appId;
-                  const isRealApp = appId[0] === appId[0].toUpperCase(); // "Calculator" vs "calculator"
+                // All actions are now handled by backend via OVOS MessageBus
+                // Frontend just logs and updates command history
+                const cmdText = `${fc.name}(${JSON.stringify(fc.args)})`;
+                setCommandHistory(prev => [...prev, {
+                  id: Date.now(),
+                  text: fc.name,
+                  result: `Executed: ${cmdText}`,
+                  timestamp: new Date()
+                }]);
 
-                  if (!isRealApp) {
-                    openApp(appId.toLowerCase()); // Call local UI function only for lowercase IDs
-                  }
-
-                  try {
-                    // Try backend for real OS effect if server is running
-                    await fetch('/api/execute', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        action: fc.name,
-                        params: fc.args
-                      })
-                    });
-                  } catch (e) {
-                    console.warn("Backend unavailable or command failed", e);
-                  }
-                } else if (fc.name === 'closeApp') {
-                  const appId = (fc.args as any).appId;
-                  closeApp(appId);
-                } else if (fc.name === 'setVolume') {
-                  const level = (fc.args as any).level;
-                  updateVolume(level);
-                }
-
-                if (fc.name === 'openApp' || fc.name === 'closeApp' || fc.name === 'setVolume') {
-                  // Legacy block or backend call block - we handled it above individually for UI
-                  // We can remove the old block or keep it for result object construction
-                  // Let's just construct result here
+                // Try backend for execution
+                try {
+                  await fetch('/api/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: fc.name, params: fc.args })
+                  });
                   result = { result: 'executed' };
-                } else if (fc.name === 'setTheme') {
-                  toggleTheme((fc.args as any).mode);
-                } else if (fc.name === 'controlMedia') {
-                  window.dispatchEvent(new CustomEvent('voice-os-media-control', {
-                    detail: { action: (fc.args as any).action }
-                  }));
-                  openApp('media');
-                } else if (fc.name === 'playwright_control') {
-                  // Dispatch Playwright command to BrowserApp
-                  window.dispatchEvent(new CustomEvent('voice-os-playwright-cmd', {
-                    detail: fc.args
-                  }));
-                  openApp('browser');
-                } else if (fc.name === 'controlRealOS') {
-                  // Call Backend API
-                  const args = fc.args as any;
-                  console.log('Executing Real OS Action:', args);
-                  try {
-                    const response = await fetch('/api/execute', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(args)
-                    });
-                    const data = await response.json();
-                    result = { result: data.result || 'executed' };
-                  } catch (err) {
-                    console.error('Backend Error:', err);
-                    result = { error: 'Failed to execute OS command' };
-                  }
+                } catch (e) {
+                  console.warn("Backend unavailable", e);
                 }
 
                 sessionPromise.then(sess => sess.sendToolResponse({
@@ -578,84 +484,139 @@ export default function App() {
 
   // --- Rendering ---
   return (
-    <div className={`h-screen w-screen overflow-hidden transition-colors duration-500 ${theme === 'dark' ? 'dark bg-black text-white' : 'bg-gray-100 text-black'}`}>
+    <div className="h-screen w-screen overflow-hidden bg-gradient-to-br from-gray-950 via-gray-900 to-black text-white">
 
-      {/* Background/Wallpaper */}
-      <div
-        className="absolute inset-0 z-0 bg-cover bg-center transition-opacity duration-1000"
-        style={{ backgroundImage: `url(${WALLPAPER_URL})`, opacity: theme === 'dark' ? 0.6 : 0.9 }}
-      />
-
-      {/* Desktop / Windows Layer */}
-      <div className="absolute inset-0 z-0 pointer-events-auto">
-        {windows.map(window => (
-          <WindowFrame
-            key={window.id}
-            window={window}
-            onClose={() => closeApp(window.id)}
-            onMinimize={() => setWindows(prev => prev.map(w => w.id === window.id ? { ...w, isMinimized: true } : w))}
-            onFocus={() => {
-              setActiveWindowId(window.id);
-              setWindows(prev => prev.map(w => w.id === window.id ? { ...w, zIndex: Date.now() } : w));
-            }}
-          />
-        ))}
+      {/* Ambient background effects - Siri-inspired */}
+      <div className="absolute inset-0 z-0">
+        <div
+          className="absolute rounded-full"
+          style={{
+            width: '500px',
+            height: '500px',
+            top: '15%',
+            left: '20%',
+            background: 'radial-gradient(circle, rgba(255,107,157,0.12), transparent 70%)',
+            filter: 'blur(80px)',
+          }}
+        />
+        <div
+          className="absolute rounded-full"
+          style={{
+            width: '400px',
+            height: '400px',
+            bottom: '20%',
+            right: '15%',
+            background: 'radial-gradient(circle, rgba(192,132,252,0.1), transparent 70%)',
+            filter: 'blur(80px)',
+          }}
+        />
+        <div
+          className="absolute rounded-full"
+          style={{
+            width: '350px',
+            height: '350px',
+            top: '50%',
+            left: '60%',
+            background: 'radial-gradient(circle, rgba(96,165,250,0.08), transparent 70%)',
+            filter: 'blur(80px)',
+          }}
+        />
       </div>
 
-      {/* Minimal Voice-Only UI */}
-      <div className="relative z-10 h-full flex flex-col items-center justify-center">
+      {/* Header */}
+      <header className="relative z-10 flex items-center justify-between px-8 py-4 border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <div
+            className="w-3 h-3 rounded-full"
+            style={{ background: 'linear-gradient(135deg, #ff6b9d, #c084fc, #60a5fa)' }}
+          />
+          <span className="text-lg font-semibold tracking-wide">VoiceOS</span>
+          <span className="text-xs text-gray-500 ml-2">JUVENILE</span>
+        </div>
+        <div className="flex items-center gap-4 text-sm">
+          <span
+            className="px-3 py-1 rounded-full text-xs font-medium"
+            style={{
+              background: isVoiceActive ? 'rgba(255,107,157,0.15)' : 'rgb(31,41,55)',
+              color: isVoiceActive ? '#ff6b9d' : 'rgb(156,163,175)',
+              border: isVoiceActive ? '1px solid rgba(255,107,157,0.3)' : 'none'
+            }}
+          >
+            {isVoiceActive ? '● ACTIVE' : '○ STANDBY'}
+          </span>
+          <span className="text-gray-500">
+            {speechLang === 'tr-TR' ? '🇹🇷' : '🇺🇸'}
+          </span>
+        </div>
+      </header>
 
-        {/* Voice Orb - Always Centered */}
-        <VoiceOrb
-          isActive={isVoiceActive}
-          isThinking={isThinking}
-          volumeLevel={audioLevel}
-          onClick={() => { }} // No-op: auto-started, no click needed
-        />
+      {/* Main Content */}
+      <main className="relative z-10 flex h-[calc(100vh-120px)]">
 
-        {/* Status Text */}
-        <div className="mt-6 text-center text-sm font-light flex flex-col items-center gap-4 max-w-md">
-          {errorMessage ? (
-            <div className="bg-red-500/20 border border-red-500/50 rounded-lg px-6 py-3">
-              <p className="text-red-200 font-medium">⚠️ {errorMessage}</p>
+        {/* Center - Voice Orb */}
+        <div className="flex-1 flex flex-col items-center justify-center">
+          <VoiceOrb
+            isActive={isVoiceActive}
+            isThinking={isThinking}
+            volumeLevel={audioLevel}
+            onClick={() => { }}
+            context={currentContext}
+          />
+
+          {/* Transcript */}
+          {transcript && (
+            <div className="mt-8 max-w-lg px-6 py-3 rounded-xl bg-white/5 backdrop-blur border border-white/10">
+              <p style={{ color: 'rgba(255,182,203,0.8)' }} className="italic text-center">
+                "{transcript}"
+              </p>
             </div>
-          ) : isVoiceActive ? (
-            <>
-              <p className="text-lg opacity-90">🎙️ Listening...</p>
+          )}
 
-              {/* Live Transcript Display */}
-              {transcript && (
-                <div className="bg-amber-500/10 backdrop-blur-sm rounded-lg px-6 py-3 border border-amber-500/30 min-w-[300px] max-w-lg">
-                  <p className="text-amber-200/90 italic text-base leading-relaxed">
-                    "{transcript}"
-                  </p>
-                </div>
-              )}
-
-              <div className="bg-white/5 backdrop-blur-sm rounded-lg px-6 py-4 border border-white/10">
-                <p className="text-white/80 mb-3 font-medium">Voice Commands:</p>
-                <ul className="text-white/60 text-left space-y-1">
-                  <li>• "Open Calculator" – Web-based app</li>
-                  <li>• "Open <strong>Real</strong> Calculator" – macOS app</li>
-                  <li>• "Open Notes" / "Open Terminal"</li>
-                  <li>• "Close Notes"</li>
-                  <li>• "Switch to Turkish" / "Türkçe'ye geç"</li>
-                  <li>• "Switch to English" / "İngilizce'ye geç"</li>
-                </ul>
-                <p className="text-white/40 text-xs mt-3">Current: {speechLang === 'tr-TR' ? '🇹🇷 Türkçe' : '🇺🇸 English'}</p>
-              </div>
-            </>
-          ) : (
-            <p className="opacity-70">Initializing voice interface...</p>
+          {/* Error message */}
+          {errorMessage && (
+            <div className="mt-4 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30">
+              <p className="text-red-300 text-sm">⚠️ {errorMessage}</p>
+            </div>
           )}
         </div>
 
-        {/* Branding */}
-        <div className="absolute bottom-8 text-center opacity-40 text-xs">
-          <p>Juvenile (Voice AI OS)</p>
-          <p>Hands-Free macOS Control</p>
+        {/* Right Panel - Command History */}
+        <aside className="w-80 border-l border-white/5 p-6 overflow-y-auto">
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Command History</h2>
+
+          {commandHistory.length === 0 ? (
+            <div className="text-gray-600 text-sm">
+              <p>No commands yet.</p>
+              <p className="mt-2 text-gray-500 text-xs">Try saying:</p>
+              <ul className="mt-2 space-y-1 text-xs text-gray-500">
+                <li>• "Open Calculator"</li>
+                <li>• "3 by 3"</li>
+                <li>• "Volume up"</li>
+                <li>• "New tab"</li>
+              </ul>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {commandHistory.slice(-10).reverse().map(cmd => (
+                <div key={cmd.id} className="p-3 rounded-lg bg-white/5 border border-white/5">
+                  <p className="text-sm text-white/90">"{cmd.text}"</p>
+                  <p className="text-xs mt-1" style={{ color: 'rgba(255,107,157,0.7)' }}>→ {cmd.result}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </aside>
+      </main>
+
+      {/* Footer */}
+      <footer className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-center py-3 border-t border-white/5">
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <span>Context:</span>
+          <span style={{ color: '#ff6b9d' }}>{currentContext}</span>
+          <span className="mx-2">•</span>
+          <span>Hands-Free macOS Control</span>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }

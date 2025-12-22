@@ -18,13 +18,15 @@ export interface UseMessageBusOptions {
     autoConnect?: boolean;
     url?: string;
     onIntent?: (intent: string, data: Record<string, any>) => void;
+    onWakeWord?: () => void;  // Called when wake word "Holo" is detected
 }
 
 export function useMessageBus(options: UseMessageBusOptions = {}) {
     const {
         autoConnect = true,
         url = 'ws://localhost:8181',
-        onIntent
+        onIntent,
+        onWakeWord
     } = options;
 
     const [isConnected, setIsConnected] = useState(false);
@@ -78,6 +80,12 @@ export function useMessageBus(options: UseMessageBusOptions = {}) {
                                 console.log('Backend says:', action.data?.text);
                             }
                         }
+                    }
+
+                    // Handle wake word detection from backend
+                    if (message.type === 'wake_word:detected') {
+                        console.log('🎤 Wake word detected:', message.data?.wake_word);
+                        onWakeWord?.();
                     }
                 } catch (e) {
                     console.error('MessageBus: Failed to parse message', e);

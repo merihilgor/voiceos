@@ -86,8 +86,16 @@ OVOS_PID=$!
 # Give MessageBus time to start
 sleep 1
 
+# Start Node.js API Server (handles /api/execute for macOS commands)
+echo "Starting API Server on http://localhost:3001..."
+node server/index.js &
+API_PID=$!
+
+# Give API server time to start
+sleep 1
+
 # Start Frontend
-echo "Starting Frontend on http://localhost:5173..."
+echo "Starting Frontend on http://localhost:3000..."
 if [ "$MOCK_MODE" = true ]; then
     VITE_MOCK_MODE=true npm run dev &
 else
@@ -99,7 +107,8 @@ echo ""
 echo "╔══════════════════════════════════════════════════╗"
 echo "║  ✓ All services running                          ║"
 echo "║                                                  ║"
-echo "║  Frontend:   http://localhost:5173               ║"
+echo "║  Frontend:   http://localhost:3000               ║"
+echo "║  API Server: http://localhost:3001               ║"
 echo "║  MessageBus: ws://localhost:8181                 ║"
 echo "║                                                  ║"
 echo "║  Press Ctrl+C to stop all services               ║"

@@ -151,6 +151,44 @@ class IntentParser:
         lower = utterance.lower()
         import re
         
+        # Wake word detection - "Holo" often misheard as these
+        # Only trigger if it's standalone or followed by action words
+        wake_word_variants = ["holo", "hollow", "hold on", "holler", "hola"]
+        action_words = ["open", "close", "play", "stop", "new", "go", "show", "start"]
+        
+        stripped = lower.strip()
+        for variant in wake_word_variants:
+            if stripped == variant:
+                # Just the wake word alone
+                return {
+                    "action": "speak",
+                    "data": {"text": "I'm here! What would you like me to do?"},
+                    "confidence": 0.95,
+                    "is_wake_word": True
+                }
+            elif stripped.startswith(variant + " "):
+                # Wake word + command - strip wake word and continue processing
+                remaining = stripped[len(variant):].strip()
+                if remaining:
+                    # Recursively parse the command part
+                    return self._parse_fallback(remaining, app_name, app_type)
+        
+        # Standalone app names (without "open") - for quick commands
+        standalone_apps = {
+            "calculator": "Calculator",
+            "terminal": "Terminal",
+            "safari": "Safari",
+            "notes": "Notes",
+            "finder": "Finder",
+            "chrome": "Google Chrome",
+        }
+        if stripped in standalone_apps:
+            return {
+                "action": "open_app",
+                "data": {"app": standalone_apps[stripped]},
+                "confidence": 0.85
+            }
+        
         # App launching/closing (highest priority)
         if "open" in lower or "aç" in lower:  # Turkish: aç = open
             # Handle singular/plural and common variations (English + Turkish)
@@ -244,13 +282,53 @@ class IntentParser:
                 "confidence": 0.8
             }
         
-        # GLOBAL: Undo/Copy/Paste work everywhere
+        # GLOBAL: Undo/Copy/Paste/Cut/Select All work everywhere
         if "undo" in lower:
             return {"action": "shortcut", "data": {"keys": "cmd+z"}, "confidence": 0.95}
+        if "redo" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+shift+z"}, "confidence": 0.95}
         if "copy" in lower:
             return {"action": "shortcut", "data": {"keys": "cmd+c"}, "confidence": 0.95}
         if "paste" in lower:
             return {"action": "shortcut", "data": {"keys": "cmd+v"}, "confidence": 0.95}
+        if "cut" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+x"}, "confidence": 0.95}
+        if "select all" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+a"}, "confidence": 0.95}
+        if "save" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+s"}, "confidence": 0.95}
+        
+        # GLOBAL: Browser commands (work in any browser)
+        if "new tab" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+t"}, "confidence": 0.95}
+        if "close tab" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+w"}, "confidence": 0.95}
+        if "refresh" in lower or "reload" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+r"}, "confidence": 0.95}
+        if "go back" in lower or "back" == lower.strip():
+            return {"action": "shortcut", "data": {"keys": "cmd+["}, "confidence": 0.90}
+        if "go forward" in lower or "forward" == lower.strip():
+            return {"action": "shortcut", "data": {"keys": "cmd+]"}, "confidence": 0.90}
+        if "new window" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+n"}, "confidence": 0.95}
+        
+        # GLOBAL: Window management
+        if "minimize" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+m"}, "confidence": 0.95}
+        if "full screen" in lower or "fullscreen" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+ctrl+f"}, "confidence": 0.90}
+        if "hide" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+h"}, "confidence": 0.90}
+        if "quit" in lower:
+            return {"action": "shortcut", "data": {"keys": "cmd+q"}, "confidence": 0.95}
+        
+        # GLOBAL: System volume commands
+        if "volume up" in lower or "louder" in lower:
+            return {"action": "volume", "data": {"direction": "up"}, "confidence": 0.90}
+        if "volume down" in lower or "quieter" in lower:
+            return {"action": "volume", "data": {"direction": "down"}, "confidence": 0.90}
+        if "mute" in lower:
+            return {"action": "volume", "data": {"direction": "mute"}, "confidence": 0.90}
         
         # Text editor context
         if app_type == "text_editor":
@@ -263,15 +341,6 @@ class IntentParser:
                             "data": {"keys": text},
                             "confidence": 0.85
                         }
-        
-        # Browser context
-        if app_type == "browser":
-            if "new tab" in lower:
-                return {"action": "shortcut", "data": {"keys": "cmd+t"}, "confidence": 0.95}
-            if "close tab" in lower:
-                return {"action": "shortcut", "data": {"keys": "cmd+w"}, "confidence": 0.95}
-            if "refresh" in lower or "reload" in lower:
-                return {"action": "shortcut", "data": {"keys": "cmd+r"}, "confidence": 0.95}
         
         # Unknown command
         return {

@@ -16,14 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unified start.sh** - Single script to run all services
 - **Turkish Command Support** - `aç` (open), `terminali` (terminal), `hesap makinesi` (calculator), `notlar` (notes)
 - **Target App Focus** - Math commands (3x3, 3 by 3) auto-focus Calculator before sending keystrokes
+- **Wake Word Listener** - Say "Holo" to activate voice control (requires `openwakeword`, `pyaudio`)
+  - `wake_word_listener.py` - Background thread listening for wake word
+  - Broadcasts `wake_word:detected` message to frontend
+- **Expanded Commands** (Mock Mode):
+  - Browser: new tab, close tab, refresh, go back, go forward
+  - Window: minimize, full screen, hide, quit
+  - System: volume up/down, mute
+  - Edit: redo, cut, select all, save
 
 ### Changed
-- `start_messagebus.py` - Now integrates context tracking, LLM parsing, and action execution
-- `requirements.txt` - Added PyObjC and google-generativeai dependencies
-- `action_executor.py` - Now supports `target_app` parameter to focus app before keystrokes
+- `start_messagebus.py` - Integrates context tracking, LLM parsing, action execution, and wake word
+- `requirements.txt` - Added openwakeword, pyaudio, numpy dependencies
+- `action_executor.py` - Now supports volume control and `target_app` parameter
 
 ### Technical Details
-- New message types: `context:update`, `action:executed`, `action:execute`
+- New message types: `context:update`, `action:executed`, `wake_word:detected`
 - Context polling: Frontend receives app focus updates every second
 - Fallback parser works without Gemini API key for basic commands
 

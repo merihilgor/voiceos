@@ -29,6 +29,13 @@ from context_tracker import get_tracker
 from intent_parser import get_parser
 from action_executor import get_executor
 
+# Try to import wake word listener (optional)
+try:
+    from wake_word_listener import get_listener as get_wake_listener
+    WAKE_WORD_AVAILABLE = True
+except ImportError:
+    WAKE_WORD_AVAILABLE = False
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -219,6 +226,29 @@ async def main():
     
     logger.info(f"Starting OVOS MessageBus (Context-Aware) on ws://{host}:{port}")
     logger.info(f"Gemini API Key: {'configured' if os.environ.get('GEMINI_API_KEY') else 'NOT SET'}")
+    
+    # Start wake word listener if available
+    if WAKE_WORD_AVAILABLE:
+        def on_wake_word():
+            """Handle wake word detection."""
+            logger.info("Wake word 'Holo' detected!")
+            # Broadcast to all clients
+            asyncio.run_coroutine_threadsafe(
+                broadcast({
+                    "type": "wake_word:detected",
+                    "data": {"wake_word": "holo"},
+                    "timestamp": datetime.now().isoformat()
+                }),
+                asyncio.get_event_loop()
+            )
+        
+        wake_listener = get_wake_listener(callback=on_wake_word)
+        if wake_listener.start():
+            logger.info("Wake word listener started (say 'Holo' to activate)")
+        else:
+            logger.warning("Wake word listener failed to start")
+    else:
+        logger.info("Wake word listener not available (install openwakeword pyaudio)")
     
     async with websockets.serve(handler, host, port):
         logger.info("MessageBus server running. Press Ctrl+C to stop.")

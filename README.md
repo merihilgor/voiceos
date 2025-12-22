@@ -117,9 +117,9 @@ While our tech stack differs (Node.js/React vs. Python/Qt), we aim to adopt thei
    ```
    Press `Ctrl+C` to stop all services.
 
-## Context-Aware Voice Control (NEW)
+## Context-Aware Voice Control
 
-VoiceOS now supports **dynamic voice commands** that understand application context:
+VoiceOS supports **dynamic voice commands** that understand application context:
 
 | Utterance | Context | Action |
 |-----------|---------|--------|
@@ -132,10 +132,21 @@ VoiceOS now supports **dynamic voice commands** that understand application cont
 
 📄 **[Technical Details](docs/implementation/context_aware_voice_control.md)**
 
+## Wake Word ("Holo")
+
+Say **"Holo"** to activate voice recognition (requires additional setup):
+
+```bash
+brew install portaudio
+pip install openwakeword pyaudio
+```
+
+📄 **[Wake Word Setup Guide](docs/implementation/wake_word_walkthrough.md)**
+
 ## Architecture
 
 VoiceOS uses a hybrid architecture:
-- **Frontend**: React/Vite on `http://localhost:5173`
+- **Frontend**: React/Vite on `http://localhost:3000`
 - **OVOS Backend**: Python WebSocket MessageBus on `ws://localhost:8181`
 
 ### Backend Components
@@ -144,6 +155,7 @@ VoiceOS uses a hybrid architecture:
 | `context_tracker.py` | Monitors focused macOS app |
 | `intent_parser.py` | Gemini-powered command interpretation |
 | `action_executor.py` | Executes keystrokes/shortcuts on macOS |
+| `wake_word_listener.py` | Listens for "Holo" wake word |
 
 ## Mock Mode (Development)
 
@@ -151,5 +163,13 @@ Run without Gemini API for local testing:
 ```bash
 ./start.sh --mock
 ```
-The fallback parser handles basic commands like "open calculator", "3 by 3", etc.
 
+### Supported Commands (Mock Mode)
+| Category | Commands |
+|----------|----------|
+| Apps | "open calculator", "open notes", "close" |
+| Math | "3x3", "3 by 3", "plus 5", "equals" |
+| Browser | "new tab", "close tab", "refresh", "go back" |
+| Window | "minimize", "full screen", "quit" |
+| System | "volume up", "volume down", "mute" |
+| Edit | "undo", "redo", "copy", "paste", "save" |

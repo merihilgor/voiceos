@@ -78,7 +78,10 @@ class ActionExecutor:
         logger.info(f"Executing: {action_type} with data: {data}")
         
         try:
-            if action_type == "keystrokes":
+            # Handle volume actions
+            if action_type == "volume":
+                result = self._control_volume(data.get("direction", ""))
+            elif action_type == "keystrokes":
                 target_app = data.get("target_app")
                 if target_app:
                     # Focus target app first, then send keystrokes
@@ -275,6 +278,23 @@ class ActionExecutor:
             return {"success": True, "message": f"Closed: {app_name or 'frontmost app'}"}
         except subprocess.CalledProcessError as e:
             return {"success": False, "message": f"Failed to close: {e.stderr.decode()}"}
+    
+    def _control_volume(self, action: str) -> dict:
+        """Control system volume using osascript."""
+        if action == "up":
+            script = 'set volume output volume ((output volume of (get volume settings)) + 10)'
+        elif action == "down":
+            script = 'set volume output volume ((output volume of (get volume settings)) - 10)'
+        elif action == "mute":
+            script = 'set volume output muted not (output muted of (get volume settings))'
+        else:
+            return {"success": False, "message": f"Unknown volume action: {action}"}
+        
+        try:
+            subprocess.run(["osascript", "-e", script], check=True, capture_output=True)
+            return {"success": True, "message": f"Volume: {action}"}
+        except subprocess.CalledProcessError as e:
+            return {"success": False, "message": f"Volume control failed: {e.stderr.decode()}"}
     
     def _speak(self, text: str) -> dict:
         """Speak text using macOS TTS."""
