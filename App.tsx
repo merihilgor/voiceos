@@ -39,6 +39,7 @@ export default function App() {
   const [audioLevel, setAudioLevel] = useState(0); // 0-1 for visualizer
   const [session, setSession] = useState<any>(null); // Keep session ref
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<string>(''); // Live speech transcript
 
   // Refs for Audio Contexts to avoid recreation
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -451,12 +452,21 @@ export default function App() {
 
     recognition.onresult = (event: any) => {
       const last = event.results.length - 1;
-      const transcript = event.results[last][0].transcript.trim();
-      console.log("Voice Recognized:", transcript);
+      const text = event.results[last][0].transcript.trim();
+      console.log("Voice Recognized:", text);
 
-      if (transcript && session) {
+      // Update visible transcript - accumulate words, slide after 15
+      setTranscript(prev => {
+        const newWords = text.split(/\s+/);
+        const prevWords = prev ? prev.split(/\s+/) : [];
+        const allWords = [...prevWords, ...newWords];
+        // Keep only last 15 words if exceeds
+        return allWords.slice(-15).join(' ');
+      });
+
+      if (text && session) {
         session.then((s: any) => {
-          if (s.sendText) s.sendText(transcript);
+          if (s.sendText) s.sendText(text);
         });
       }
     };
@@ -528,6 +538,16 @@ export default function App() {
           ) : isVoiceActive ? (
             <>
               <p className="text-lg opacity-90">🎙️ Listening...</p>
+
+              {/* Live Transcript Display */}
+              {transcript && (
+                <div className="bg-amber-500/10 backdrop-blur-sm rounded-lg px-6 py-3 border border-amber-500/30 min-w-[300px] max-w-lg">
+                  <p className="text-amber-200/90 italic text-base leading-relaxed">
+                    "{transcript}"
+                  </p>
+                </div>
+              )}
+
               <div className="bg-white/5 backdrop-blur-sm rounded-lg px-6 py-4 border border-white/10">
                 <p className="text-white/80 mb-3 font-medium">Voice Commands:</p>
                 <ul className="text-white/60 text-left space-y-1">
