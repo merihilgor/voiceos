@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Intent Parser - Uses Gemini to interpret voice commands in context.
+Intent Parser - Uses LLM to interpret voice commands in context.
 Converts natural language utterances into structured actions.
+
+Supports multiple providers:
+- Gemini (Google): Set LLM_PROVIDER=gemini and GEMINI_API_KEY
+- Ollama Cloud: Set LLM_PROVIDER=ollama and OLLAMA_API_KEY
 """
 
 import json
@@ -17,10 +21,24 @@ try:
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
-    logger.warning("google-generativeai not available - using mock parser")
+    logger.warning("google-generativeai not available")
+
+# Try to import OpenAI (for Ollama compatibility)
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    logger.warning("openai not available - Ollama support disabled")
 
 
-# System prompt for Gemini
+# Default configuration
+DEFAULT_OLLAMA_BASE_URL = "https://ollama.com/v1"
+DEFAULT_OLLAMA_MODEL = "gemma3:4b"
+DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
+
+
+# System prompt for LLM
 SYSTEM_PROMPT = """You are a voice command interpreter for macOS. Your job is to convert natural language into structured actions.
 
 Given:
@@ -84,19 +102,52 @@ CRITICAL: Output ONLY the JSON object. No explanation, no markdown formatting.""
 
 
 class IntentParser:
-    """Parses voice utterances into structured actions using Gemini."""
+    """Parses voice utterances into structured actions using LLM (Gemini or Ollama)."""
     
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
+        # Determine provider from environment
+        self.provider = os.environ.get("LLM_PROVIDER", "gemini").lower()
+        self.model_name = os.environ.get("LLM_MODEL")
         self.model = None
+        self.client = None
+        
+        logger.info(f"Initializing IntentParser with provider: {self.provider}")
+        
+        if self.provider == "ollama":
+            self._init_ollama()
+        else:
+            # Default to Gemini
+            self._init_gemini(api_key)
+    
+    def _init_gemini(self, api_key: Optional[str] = None):
+        """Initialize Gemini provider."""
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
+        self.model_name = self.model_name or DEFAULT_GEMINI_MODEL
         
         if GENAI_AVAILABLE and self.api_key:
             try:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel("gemini-1.5-flash")
-                logger.info("Gemini model initialized successfully")
+                self.model = genai.GenerativeModel(self.model_name)
+                logger.info(f"Gemini model initialized: {self.model_name}")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini: {e}")
+    
+    def _init_ollama(self):
+        """Initialize Ollama provider using OpenAI-compatible API."""
+        ollama_api_key = os.environ.get("OLLAMA_API_KEY", "ollama")
+        ollama_base_url = os.environ.get("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
+        self.model_name = self.model_name or DEFAULT_OLLAMA_MODEL
+        
+        if OPENAI_AVAILABLE and ollama_api_key:
+            try:
+                self.client = OpenAI(
+                    api_key=ollama_api_key,
+                    base_url=ollama_base_url
+                )
+                logger.info(f"Ollama client initialized: {ollama_base_url} with model {self.model_name}")
+            except Exception as e:
+                logger.error(f"Failed to initialize Ollama: {e}")
+
     
     async def parse(self, utterance: str, context: dict) -> dict:
         """
@@ -116,8 +167,8 @@ class IntentParser:
         app_name = context.get("name", "Unknown")
         app_type = context.get("type", "other")
         
-        # If no Gemini, use rule-based fallback
-        if not self.model:
+        # Check if we have any LLM available
+        if not self.model and not self.client:
             return self._parse_fallback(utterance, app_name, app_type)
         
         try:
@@ -127,8 +178,13 @@ class IntentParser:
                 utterance=utterance
             )
             
-            response = self.model.generate_content(prompt)
-            text = response.text.strip()
+            # Use appropriate provider
+            if self.provider == "ollama" and self.client:
+                text = await self._parse_with_ollama(prompt)
+            elif self.model:
+                text = await self._parse_with_gemini(prompt)
+            else:
+                return self._parse_fallback(utterance, app_name, app_type)
             
             # Clean up response (remove markdown if present)
             if text.startswith("```"):
@@ -136,15 +192,32 @@ class IntentParser:
                 text = text.rsplit("```", 1)[0]
             
             result = json.loads(text)
-            logger.info(f"Gemini parsed: {utterance} → {result}")
+            logger.info(f"{self.provider.upper()} parsed: {utterance} → {result}")
             return result
             
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response as JSON: {e}")
+            logger.error(f"Failed to parse LLM response as JSON: {e}")
             return self._parse_fallback(utterance, app_name, app_type)
         except Exception as e:
-            logger.error(f"Gemini parse error: {e}")
+            logger.error(f"LLM parse error: {e}")
             return self._parse_fallback(utterance, app_name, app_type)
+    
+    async def _parse_with_gemini(self, prompt: str) -> str:
+        """Generate response using Gemini."""
+        response = self.model.generate_content(prompt)
+        return response.text.strip()
+    
+    async def _parse_with_ollama(self, prompt: str) -> str:
+        """Generate response using Ollama (OpenAI-compatible API)."""
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,  # Low temperature for consistent JSON output
+            max_tokens=500
+        )
+        return response.choices[0].message.content.strip()
     
     def _parse_fallback(self, utterance: str, app_name: str, app_type: str) -> dict:
         """Rule-based fallback parser when Gemini is unavailable."""

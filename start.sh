@@ -60,13 +60,26 @@ fi
 
 # Check for API key in full mode
 if [ "$MOCK_MODE" = false ]; then
-    if [ -z "$GEMINI_API_KEY" ] && [ -f ".env.local" ]; then
-        export $(grep -v '^#' .env.local | xargs)
+    if [ -f ".env.local" ]; then
+        export $(grep -v '^#' .env.local | grep -v '^$' | xargs)
     fi
-    if [ -z "$GEMINI_API_KEY" ]; then
-        echo "⚠️  GEMINI_API_KEY not set. Using fallback parser."
-        echo "   Set it in .env.local or: export GEMINI_API_KEY=your-key"
-        echo ""
+    
+    # Determine LLM provider
+    LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+    echo "LLM Provider: $LLM_PROVIDER"
+    
+    if [ "$LLM_PROVIDER" = "ollama" ]; then
+        if [ -z "$OLLAMA_API_KEY" ]; then
+            echo "⚠️  OLLAMA_API_KEY not set. Using fallback parser."
+            echo "   Set it in .env.local or: export OLLAMA_API_KEY=your-key"
+            echo ""
+        fi
+    else
+        if [ -z "$GEMINI_API_KEY" ]; then
+            echo "⚠️  GEMINI_API_KEY not set. Using fallback parser."
+            echo "   Set it in .env.local or: export GEMINI_API_KEY=your-key"
+            echo ""
+        fi
     fi
 fi
 
