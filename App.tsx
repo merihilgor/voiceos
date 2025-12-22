@@ -40,6 +40,7 @@ export default function App() {
   const [session, setSession] = useState<any>(null); // Keep session ref
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string>(''); // Live speech transcript
+  const [speechLang, setSpeechLang] = useState<string>('en-US'); // Speech recognition language
 
   // Refs for Audio Contexts to avoid recreation
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -437,6 +438,8 @@ export default function App() {
     const envMock = (import.meta as any).env.VITE_MOCK_MODE === 'true';
     const useMock = urlParams.get('mock') === 'true' || envMock || !apiKey;
 
+    console.log("Speech Recognition Effect - useMock:", useMock, "session:", !!session);
+
     if (!useMock || !session) return;
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -448,11 +451,18 @@ export default function App() {
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = false;
-    recognition.lang = 'en-US';
+    recognition.lang = speechLang;
+    console.log("Speech Recognition: Creating new instance with lang:", speechLang);
+
+    recognition.onaudiostart = () => console.log("Speech: Audio capture started");
+    recognition.onspeechstart = () => console.log("Speech: Speech detected!");
+    recognition.onspeechend = () => console.log("Speech: Speech ended");
 
     recognition.onresult = (event: any) => {
       const last = event.results.length - 1;
       const text = event.results[last][0].transcript.trim();
+      if (!text) return;
+      const lower = text.toLowerCase();
       console.log("Voice Recognized:", text);
 
       // Update visible transcript - accumulate words, slide after 15
@@ -460,9 +470,27 @@ export default function App() {
         const newWords = text.split(/\s+/);
         const prevWords = prev ? prev.split(/\s+/) : [];
         const allWords = [...prevWords, ...newWords];
-        // Keep only last 15 words if exceeds
         return allWords.slice(-15).join(' ');
       });
+
+      // Voice command: Switch language
+      // Turkish mode: "İngilizce", "English", "ingilizceye geç", "switch to English"
+      // English mode: "Türkçe", "Turkish", "türkçeye geç", "switch to Turkish"
+      const switchToEnglish = lower.includes('english') || lower.includes('ingilizce');
+      const switchToTurkish = lower.includes('turkish') || lower.includes('türkçe');
+
+      if (switchToTurkish && speechLang !== 'tr-TR') {
+        setSpeechLang('tr-TR');
+        setTranscript('');
+        console.log("Switching to Turkish...");
+        return;
+      }
+      if (switchToEnglish && speechLang !== 'en-US') {
+        setSpeechLang('en-US');
+        setTranscript('');
+        console.log("Switching to English...");
+        return;
+      }
 
       if (text && session) {
         session.then((s: any) => {
@@ -471,26 +499,35 @@ export default function App() {
       }
     };
 
+    let isActive = true; // Track if this effect instance is still active
+
     recognition.onerror = (event: any) => {
       console.error("Speech Recognition Error:", event.error);
-      // Restart on error (except for 'no-speech')
-      if (event.error !== 'no-speech') {
-        setTimeout(() => recognition.start(), 500);
+      // Don't restart on aborted (happens during language switch)
+      if (event.error === 'aborted' || event.error === 'no-speech') return;
+      // Only restart if this effect is still active
+      if (isActive) {
+        setTimeout(() => {
+          try { recognition.start(); } catch (e) { /* ignore */ }
+        }, 500);
       }
     };
 
     recognition.onend = () => {
-      // Restart to keep listening continuously
-      recognition.start();
+      // Only restart if this effect instance is still active
+      if (isActive) {
+        try { recognition.start(); } catch (e) { /* ignore */ }
+      }
     };
 
     recognition.start();
-    console.log("Mock Mode: Speech Recognition started.");
+    console.log(`Mock Mode: Speech Recognition started (${speechLang}).`);
 
     return () => {
+      isActive = false; // Mark as inactive before stopping
       recognition.stop();
     };
-  }, [session]);
+  }, [session, speechLang]);
 
   // --- Rendering ---
   return (
@@ -555,7 +592,10 @@ export default function App() {
                   <li>• "Open <strong>Real</strong> Calculator" – macOS app</li>
                   <li>• "Open Notes" / "Open Terminal"</li>
                   <li>• "Close Notes"</li>
+                  <li>• "Switch to Turkish" / "Türkçe'ye geç"</li>
+                  <li>• "Switch to English" / "İngilizce'ye geç"</li>
                 </ul>
+                <p className="text-white/40 text-xs mt-3">Current: {speechLang === 'tr-TR' ? '🇹🇷 Türkçe' : '🇺🇸 English'}</p>
               </div>
             </>
           ) : (
