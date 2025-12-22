@@ -493,8 +493,12 @@ export default function App() {
     console.log("Speech Recognition: Creating new instance with lang:", speechLang);
 
     recognition.onaudiostart = () => console.log("Speech: Audio capture started");
+    recognition.onaudioend = () => console.log("Speech: Audio capture ended");
     recognition.onspeechstart = () => console.log("Speech: Speech detected!");
     recognition.onspeechend = () => console.log("Speech: Speech ended");
+    recognition.onnomatch = () => console.log("Speech: No match found");
+    recognition.onsoundstart = () => console.log("Speech: Sound started");
+    recognition.onsoundend = () => console.log("Speech: Sound ended");
 
     recognition.onresult = (event: any) => {
       const last = event.results.length - 1;

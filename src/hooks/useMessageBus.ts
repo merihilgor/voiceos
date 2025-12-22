@@ -58,10 +58,26 @@ export function useMessageBus(options: UseMessageBusOptions = {}) {
                     console.log('MessageBus: Received', message);
                     setLastMessage(message);
 
-                    // Handle intent messages
+                    // Handle intent messages (legacy format)
                     if (message.type?.startsWith('intent:')) {
                         const intentName = message.type.replace('intent:', '');
                         onIntent?.(intentName, message.data || {});
+                    }
+
+                    // Handle action:executed messages (new format)
+                    if (message.type === 'action:executed') {
+                        const action = message.data?.action;
+                        if (action?.action) {
+                            console.log('Action executed:', action.action, action.data);
+                            // Map new action format to legacy intent format
+                            if (action.action === 'open_app') {
+                                onIntent?.('open_app', action.data || {});
+                            } else if (action.action === 'close_app') {
+                                onIntent?.('close_app', action.data || {});
+                            } else if (action.action === 'speak') {
+                                console.log('Backend says:', action.data?.text);
+                            }
+                        }
                     }
                 } catch (e) {
                     console.error('MessageBus: Failed to parse message', e);

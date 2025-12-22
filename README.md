@@ -99,32 +99,57 @@ While our tech stack differs (Node.js/React vs. Python/Qt), we aim to adopt thei
 
 ## Run Locally
 
-**Prerequisites:**  Node.js, Python 3
+**Prerequisites:** Node.js, Python 3
 
 1. Install dependencies:
    ```bash
    npm install
    ```
 
-2. (Optional) Set the `GEMINI_API_KEY` in `.env.local` for full AI mode
-
-3. Start VoiceOS:
+2. Start VoiceOS:
    ```bash
+   # Full mode (with Gemini AI)
+   export GEMINI_API_KEY="your-api-key"
    ./start.sh
+
+   # OR Mock mode (no API key needed)
+   ./start.sh --mock
    ```
-   This starts both the **OVOS MessageBus** (Python backend) and the **Frontend** (React/Vite).
    Press `Ctrl+C` to stop all services.
+
+## Context-Aware Voice Control (NEW)
+
+VoiceOS now supports **dynamic voice commands** that understand application context:
+
+| Utterance | Context | Action |
+|-----------|---------|--------|
+| "Open Calculator" | Any | Opens Calculator |
+| "3 by 3" | Calculator | Types `3*3` |
+| "equals" | Calculator | Presses Enter |
+| "Open Notes" | Any | Opens Notes |
+| "write hello" | Notes | Types `hello` |
+| "undo" | Any | Presses Cmd+Z |
+
+📄 **[Technical Details](docs/implementation/context_aware_voice_control.md)**
 
 ## Architecture
 
 VoiceOS uses a hybrid architecture:
-- **Frontend**: React/Vite on `http://localhost:3000`
+- **Frontend**: React/Vite on `http://localhost:5173`
 - **OVOS Backend**: Python WebSocket MessageBus on `ws://localhost:8181`
-- **Node Backend**: Express API on `http://localhost:3001` (for macOS control)
+
+### Backend Components
+| File | Purpose |
+|------|---------|
+| `context_tracker.py` | Monitors focused macOS app |
+| `intent_parser.py` | Gemini-powered command interpretation |
+| `action_executor.py` | Executes keystrokes/shortcuts on macOS |
 
 ## Mock Mode (Development)
-If your API quota is exceeded or you want to test without an API key:
-1.  **Automatic**: The app starts in Mock Mode by default if `VITE_MOCK_MODE=true` is in `.env.local`.
-2.  **Manual**: Open `http://localhost:3000/?mock=true`
-3.  **Walkthrough**: See [mock-mode-walkthrough.md](mock-mode-walkthrough.md) for details.
+
+Run without Gemini API for local testing:
+```bash
+./start.sh --mock
+```
+The fallback parser handles basic commands like "open calculator", "3 by 3", etc.
 
