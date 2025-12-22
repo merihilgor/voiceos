@@ -23,7 +23,7 @@ When implementing new features:
 ## Call for Contributions
 We are currently focusing on:
 *   **macOS MVP**: Enhancing the stability of the React front-end.
-*   **Security**: Integrating compliance headers and security checks (Jarwis AI roadmap).
+*   **Security**: Integrating compliance headers and security checks (Jarwis AI or similar roadmap).
 *   **Cross-Platform**: Windows/Linux architectural proposals.
 
 ## How to Contribute
