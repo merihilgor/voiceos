@@ -1,0 +1,5 @@
+# OVOS Integration Backend Dependencies
+# Minimal requirements for MessageBus WebSocket communication
+
+ovos-bus-client>=0.0.8
+ovos-utils>=0.0.38

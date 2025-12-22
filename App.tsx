@@ -11,6 +11,7 @@ import { GalleryApp } from './components/apps/GalleryApp';
 import { MediaApp } from './components/apps/MediaApp';
 import { SystemApp } from './components/apps/SystemApp';
 import { CalculatorApp } from './components/apps/CalculatorApp';
+import { useMessageBus } from './src/hooks/useMessageBus';
 import { APP_ICONS, WALLPAPER_URL } from './constants';
 import { WindowState, ThemeMode, AppDefinition } from './types';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioUtils';
@@ -48,6 +49,43 @@ export default function App() {
   const audioStreamRef = useRef<MediaStream | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+
+  // --- OVOS MessageBus Integration ---
+  const handleOvosIntent = useCallback((intent: string, data: Record<string, any>) => {
+    console.log('OVOS Intent:', intent, data);
+
+    switch (intent) {
+      case 'open_app':
+        if (data.app) {
+          openApp(data.app);
+          // If "real" modifier, also call backend
+          if (data.real) {
+            fetch('/api/execute', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'openApp', params: { appId: data.app } })
+            }).catch(console.error);
+          }
+        }
+        break;
+      case 'close_app':
+        if (data.app) closeApp(data.app);
+        break;
+      case 'switch_language':
+        if (data.language) setSpeechLang(data.language);
+        break;
+      case 'fallback':
+        console.log('OVOS Fallback:', data.response);
+        break;
+      default:
+        console.log('Unhandled intent:', intent);
+    }
+  }, []);
+
+  const { isConnected: isOvosConnected, sendUtterance } = useMessageBus({
+    autoConnect: true,
+    onIntent: handleOvosIntent
+  });
 
   // --- OS Actions ---
   const openApp = useCallback((appId: string) => {
@@ -496,6 +534,11 @@ export default function App() {
         session.then((s: any) => {
           if (s.sendText) s.sendText(text);
         });
+      }
+
+      // Also send to OVOS MessageBus if connected
+      if (text && isOvosConnected) {
+        sendUtterance(text);
       }
     };
 

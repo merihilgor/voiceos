@@ -99,17 +99,32 @@ While our tech stack differs (Node.js/React vs. Python/Qt), we aim to adopt thei
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:**  Node.js, Python 3
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+   ```bash
+   npm install
+   ```
+
+2. (Optional) Set the `GEMINI_API_KEY` in `.env.local` for full AI mode
+
+3. Start VoiceOS:
+   ```bash
+   ./start.sh
+   ```
+   This starts both the **OVOS MessageBus** (Python backend) and the **Frontend** (React/Vite).
+   Press `Ctrl+C` to stop all services.
+
+## Architecture
+
+VoiceOS uses a hybrid architecture:
+- **Frontend**: React/Vite on `http://localhost:3000`
+- **OVOS Backend**: Python WebSocket MessageBus on `ws://localhost:8181`
+- **Node Backend**: Express API on `http://localhost:3001` (for macOS control)
 
 ## Mock Mode (Development)
 If your API quota is exceeded or you want to test without an API key:
 1.  **Automatic**: The app starts in Mock Mode by default if `VITE_MOCK_MODE=true` is in `.env.local`.
 2.  **Manual**: Open `http://localhost:3000/?mock=true`
 3.  **Walkthrough**: See [mock-mode-walkthrough.md](mock-mode-walkthrough.md) for details.
+
