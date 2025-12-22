@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.2.0] - 2025-12-22
+
 ### Added
+- **Siri-Inspired UI Redesign** - Complete visual overhaul with Antigravity aesthetic
+  - New `VoiceOrb` component with flowing pink/purple/blue gradient animation
+  - Volume-reactive scaling effect
+  - Glow pulse animations when active
+  - Pulsing ring effects in Siri colors
+- **Design System** - New `index.css` with comprehensive CSS utility classes
+  - Siri color palette (pink #ff6b9d, purple #c084fc, blue #60a5fa)
+  - `siri-gradient` animation for flowing colors
+  - `glow-pulse` animation for ambient effects
+  - `float` animation for subtle movement
+- **Ambient Background** - Pink/purple/blue gradient orbs create depth
+- **Node.js API Server** - `start.sh` now auto-starts the API server on port 3001
 - **Context-Aware Voice Control** - Dynamic voice commands based on focused app
   - `context_tracker.py` - Monitors focused macOS application via PyObjC
   - `intent_parser.py` - Gemini-powered intent parsing with context awareness
@@ -29,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `start_messagebus.py` - Integrates context tracking, LLM parsing, action execution, and wake word
 - `requirements.txt` - Added openwakeword, pyaudio, numpy dependencies
 - `action_executor.py` - Now supports volume control and `target_app` parameter
+- Header, footer, and transcript colors updated to match Siri theme
 
 ### Technical Details
 - New message types: `context:update`, `action:executed`, `wake_word:detected`
@@ -54,5 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/merihilgor/voiceos/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/merihilgor/voiceos/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/merihilgor/voiceos/releases/tag/v0.2.0
 [0.1.0]: https://github.com/merihilgor/voiceos/releases/tag/v0.1.0
