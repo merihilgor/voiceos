@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supports: English, Turkish, German, French, Spanish
   - Persists across sessions (localStorage)
 
+### Removed
+- Temp/debug files: `pdf_strings.txt`, `run_log.txt`, `test_backend_open.js`
+
 ---
 
 ## [0.2.0] - 2025-12-22
