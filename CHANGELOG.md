@@ -40,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Temp/debug files: `pdf_strings.txt`, `run_log.txt`, `test_backend_open.js`
 
+### Added (Developer Tools)
+- **Bandwidth Monitor** (debug mode only): Real-time ↓/↑ speed indicator
+  - Color-coded: Green (OK) / Yellow (slow) / Gray (idle)
+  - Fixed position at bottom-left corner
+
 ---
 
 ## [0.2.0] - 2025-12-22

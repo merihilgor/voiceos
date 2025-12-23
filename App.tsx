@@ -3,6 +3,7 @@ import { FunctionDeclaration, Type, GoogleGenAI, LiveServerMessage, Modality } f
 import { MockGeminiService } from './services/MockGeminiService';
 import { OllamaService } from './services/OllamaService';
 import { VoiceOrb } from './components/ui/VoiceOrb';
+import { BandwidthMonitor } from './components/ui/BandwidthMonitor';
 import { useMessageBus } from './src/hooks/useMessageBus';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioUtils';
 
@@ -837,6 +838,9 @@ export default function App() {
           <span>Hands-Free macOS Control</span>
         </div>
       </footer>
+
+      {/* Debug: Bandwidth Monitor */}
+      {DEBUG && <BandwidthMonitor visible={true} />}
     </div>
   );
 }
