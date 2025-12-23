@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bandwidth Monitor** (debug mode only): Real-time ↓/↑ speed indicator
   - Color-coded: Green (OK) / Yellow (slow) / Gray (idle)
   - Fixed position at bottom-left corner
+- **Unified Logging System**
+  - Frontend `Logger.ts` with levels (DEBUG/INFO/WARN/ERROR)
+  - Backend Python `RotatingFileHandler` (5 files × 1MB)
+  - Log analysis API: `/api/logs/analyze`
+  - ENV config: `VITE_LOG_LEVEL`, `LOG_LEVEL`, `LOG_DIR`
 
 ---
 

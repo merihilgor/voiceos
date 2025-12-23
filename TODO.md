@@ -28,3 +28,11 @@
     - **Goal:** Long-term stability.
     - ✅ Evaluated: Native WebSocket is sufficient for local communication
     - Revisit if remote server support or stability issues arise
+
+## Phase 4: Developer Experience
+6. **[x] Unified Logging System**
+    - **Goal:** Best-practice logging with persistence.
+    - ✅ Frontend `Logger.ts` with log levels (DEBUG/INFO/WARN/ERROR)
+    - ✅ Backend Python `RotatingFileHandler` (5 files × 1MB)
+    - ✅ ENV config: `VITE_LOG_LEVEL`, `LOG_LEVEL`, `LOG_DIR`
+    - ✅ Log analysis API: `/api/logs/analyze`
