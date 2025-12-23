@@ -26,7 +26,10 @@ export default function App() {
   const [session, setSession] = useState<any>(null); // Keep session ref
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string>(''); // Live speech transcript
-  const [speechLang, setSpeechLang] = useState<string>('en-US'); // Speech recognition language
+  // Speech recognition language - switchable via voice command
+  const [speechLang, setSpeechLang] = useState<string>(() => {
+    return localStorage.getItem('voiceos_speechlang') || navigator.language || 'en-US';
+  });
   const [isListening, setIsListening] = useState(false); // Wake word gating - only send to LLM when true
   const [wakeWord, setWakeWord] = useState<string>(() => {
     // Load custom wake word from localStorage, default to 'ayo'
@@ -56,8 +59,7 @@ export default function App() {
     // Add to command history
     const resultText = intent === 'open_app' ? `Opened ${data.app}`
       : intent === 'close_app' ? `Closed ${data.app}`
-        : intent === 'switch_language' ? `Switched to ${data.language}`
-          : `Executed ${intent}`;
+        : `Executed ${intent}`;
 
     setCommandHistory(prev => [...prev, {
       id: Date.now(),
@@ -69,11 +71,6 @@ export default function App() {
     // Update context if app changed
     if (intent === 'open_app' && data.app) {
       setCurrentContext(data.app);
-    }
-
-    // Language switch
-    if (intent === 'switch_language' && data.language) {
-      setSpeechLang(data.language);
     }
   }, []);
 
@@ -564,6 +561,28 @@ export default function App() {
         return;
       }
 
+      // Check for language switch voice command
+      // Matches: "switch to Turkish", "speak English", "Türkçe konuş", etc.
+      const langMap: Record<string, string> = {
+        'turkish': 'tr-TR', 'türkçe': 'tr-TR', 'turkce': 'tr-TR',
+        'english': 'en-US', 'ingilizce': 'en-US',
+        'german': 'de-DE', 'almanca': 'de-DE',
+        'french': 'fr-FR', 'fransızca': 'fr-FR',
+        'spanish': 'es-ES', 'ispanyolca': 'es-ES',
+      };
+      const langMatch = lower.match(/(?:switch\s+to|speak|konuş|dil(?:i)?|language)\s+(\w+)/i)
+        || lower.match(/^(türkçe|english|turkish|ingilizce)$/i);
+      if (langMatch) {
+        const langKey = (langMatch[1] || langMatch[0]).toLowerCase();
+        const newLang = langMap[langKey];
+        if (newLang && newLang !== speechLang) {
+          setSpeechLang(newLang);
+          localStorage.setItem('voiceos_speechlang', newLang);
+          console.log(`🌍 Language switched to: ${newLang}`);
+          return;
+        }
+      }
+
       // Use dynamically generated wake word variants from LLM (stored in state)
       // Escape special regex chars and build pattern
       const escapedVariants = wakeWordVariants.map(v => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
@@ -745,9 +764,6 @@ export default function App() {
             }}
           >
             {isVoiceActive ? '● ACTIVE' : '○ STANDBY'}
-          </span>
-          <span className="text-gray-500">
-            {speechLang === 'tr-TR' ? '🇹🇷' : '🇺🇸'}
           </span>
         </div>
       </header>

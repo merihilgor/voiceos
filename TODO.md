@@ -7,10 +7,10 @@
     - Assistant remains in standby (listening locally) until wake word is detected.
     - ✅ *Customizable via voice: "Set nickname to [word]" or "Call me [word]"*
 
-2. **[ ] Unified LLM-based Language Support**
+2. **[x] Unified LLM-based Language Support**
     - **Goal:** Leverage LLM intelligence/removing legacy code.
-    - Remove manual language switching logic (buttons/state).
-    - Allow LLM to detect language and translate it to system intents automatically.
+    - ✅ LLM detects language and translates to system intents automatically.
+    - ✅ Voice command: "Switch to Turkish/English" or just "Türkçe"
 
 3. **[ ] Codebase Cleanup**
     - **Goal:** Remove technical debt.

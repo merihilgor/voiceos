@@ -6,15 +6,9 @@ const execPromise = util.promisify(exec);
 // Execute raw JXA (JavaScript for Automation)
 export async function executeJXA(script) {
     try {
-        // Escape single quotes for shell safety if needed, 
-        // but typically we pass the script via -e
-        // For complex scripts, writing to a temp file is safer, but -e works for simple commands.
-        // NOTE: osascript -l JavaScript -e "..."
-
-        // We'll use specific implementations for known safe commands to avoid arbitrary code execution risks 
-        // in this MVP phase, or careful validation.
-
-        const command = `osascript -l JavaScript -e '${script}'`;
+        // Escape single quotes for shell: ' -> '\''  (end quote, escaped quote, start quote)
+        const escapedScript = script.replace(/'/g, "'\\''")
+        const command = `osascript -l JavaScript -e '${escapedScript}'`;
         const { stdout, stderr } = await execPromise(command);
 
         if (stderr) console.error('JXA Stderr:', stderr);

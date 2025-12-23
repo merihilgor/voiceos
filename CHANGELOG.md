@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Wake Word Engine**: Switched from "Holo" to dynamic regex-based matching with "Ayo" default
 - VoiceOrb: Added `wakeWord` and `isListening` props for better state visualization
+- **Unified LLM Language Support**: Removed manual language switching - LLM handles any language automatically
+  - Removed language flag emoji (🇺🇸/🇹🇷) from header
+  - Removed `switch_language` intent handler
+
+### Added (Multilingual)
+- **Voice-based Language Switching**: Say "switch to Turkish" or "Türkçe" to change speech recognition language
+  - Supports: English, Turkish, German, French, Spanish
+  - Persists across sessions (localStorage)
 
 ---
 
