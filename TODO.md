@@ -24,7 +24,7 @@
     - ✅ Shows ↓ Download / ↑ Upload speeds with color coding
 
 ## Phase 3: Infrastructure
-5. **[ ] Network Layer Evaluation (Socket.io)**
+5. **[~] Network Layer Evaluation (Socket.io)** - *DEFERRED*
     - **Goal:** Long-term stability.
-    - Evaluate replacing native WebSocket with `socket.io`.
-    - *Note down priority: Low, unless current WebSockets prove unstable.*
+    - ✅ Evaluated: Native WebSocket is sufficient for local communication
+    - Revisit if remote server support or stability issues arise
