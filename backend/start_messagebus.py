@@ -12,7 +12,6 @@ This version integrates:
 
 import asyncio
 import json
-import logging
 import os
 from datetime import datetime
 
@@ -28,6 +27,7 @@ except ImportError:
 from context_tracker import get_tracker
 from intent_parser import get_parser
 from action_executor import get_executor
+from logger_config import get_logger, log_startup_info
 
 # Try to import wake word listener (optional)
 try:
@@ -36,8 +36,8 @@ try:
 except ImportError:
     WAKE_WORD_AVAILABLE = False
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Use configured logger
+logger = get_logger(__name__)
 
 # Store connected clients
 connected_clients = set()

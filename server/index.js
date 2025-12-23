@@ -1,10 +1,18 @@
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
+import fs from 'fs';
+import path from 'path';
 import { executeJXA, openApp, closeApp, setVolume, sendShortcut, typeKeystrokes, openPath, clickAt } from './macos.js';
 
 const app = express();
 const PORT = 3001;
+const LOG_DIR = process.env.LOG_DIR || './logs';
+
+// Ensure log directory exists
+if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+}
 
 app.use(cors());
 // Increase body size limit for screenshots (default is 100kb)
@@ -253,6 +261,74 @@ app.post('/api/vision', async (req, res) => {
 
     } catch (error) {
         console.error('Vision API error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ====== LOG API ENDPOINTS ======
+
+// Log persistence endpoint (receives frontend errors)
+app.post('/api/logs', (req, res) => {
+    const { timestamp, level, message, data } = req.body;
+    const logLine = `${timestamp} [${level.toUpperCase()}] ${message}${data ? ' ' + JSON.stringify(data) : ''}\n`;
+
+    const logFile = path.join(LOG_DIR, 'frontend.log');
+    fs.appendFileSync(logFile, logLine);
+
+    res.json({ success: true });
+});
+
+// Log analysis endpoint for maintenance
+app.get('/api/logs/analyze', async (req, res) => {
+    try {
+        const logFiles = ['voiceos.log', 'voiceos_errors.log', 'frontend.log'];
+        const errors = [];
+
+        for (const file of logFiles) {
+            const filePath = path.join(LOG_DIR, file);
+            if (fs.existsSync(filePath)) {
+                const content = fs.readFileSync(filePath, 'utf-8');
+                const lines = content.split('\n').filter(l => l.includes('[ERROR]') || l.includes('[error]'));
+                lines.forEach(line => {
+                    errors.push({ source: file, message: line.trim() });
+                });
+            }
+        }
+
+        // Get unique errors (last 50)
+        const uniqueErrors = [...new Set(errors.map(e => e.message))]
+            .slice(-50)
+            .map(msg => ({
+                message: msg,
+                count: errors.filter(e => e.message === msg).length
+            }));
+
+        res.json({
+            success: true,
+            totalErrors: errors.length,
+            uniqueErrors: uniqueErrors.length,
+            errors: uniqueErrors,
+            suggestion: errors.length > 0
+                ? 'Run LLM analysis with prompt: "Analyze these errors and suggest fixes"'
+                : 'No errors found in logs'
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Log file list
+app.get('/api/logs/files', (req, res) => {
+    try {
+        const files = fs.readdirSync(LOG_DIR)
+            .filter(f => f.endsWith('.log'))
+            .map(f => ({
+                name: f,
+                size: fs.statSync(path.join(LOG_DIR, f)).size,
+                modified: fs.statSync(path.join(LOG_DIR, f)).mtime
+            }));
+        res.json({ success: true, files });
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });

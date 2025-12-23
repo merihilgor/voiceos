@@ -142,3 +142,7 @@ vite.config.ts.timestamp-*
 pdf_strings.txt
 run_log.txt
 test_backend_open.js
+
+# Log files
+logs/
+*.log
