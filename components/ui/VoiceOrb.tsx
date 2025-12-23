@@ -3,6 +3,8 @@ import React from 'react';
 interface VoiceOrbProps {
   isActive: boolean;
   isThinking: boolean;
+  isListening?: boolean; // Wake word activated - actively listening for commands
+  wakeWord?: string; // Current wake word to display
   volumeLevel: number;
   onClick: () => void;
   context?: string;
@@ -14,6 +16,8 @@ interface VoiceOrbProps {
 export const VoiceOrb: React.FC<VoiceOrbProps> = ({
   isActive,
   isThinking,
+  isListening = false,
+  wakeWord = 'ayo',
   volumeLevel,
   context
 }) => {
@@ -117,13 +121,17 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({
             className="text-xs font-semibold uppercase"
             style={{
               letterSpacing: '0.2em',
-              color: isActive
-                ? isThinking ? '#c084fc' : '#ff6b9d'
-                : '#6b7280',
-              textShadow: isActive ? '0 0 10px rgba(255,107,157,0.5)' : 'none'
+              color: isListening
+                ? '#22d3ee' // Cyan when actively listening
+                : isActive
+                  ? isThinking ? '#c084fc' : '#ff6b9d'
+                  : '#6b7280',
+              textShadow: isListening
+                ? '0 0 10px rgba(34,211,238,0.5)'
+                : isActive ? '0 0 10px rgba(255,107,157,0.5)' : 'none'
             }}
           >
-            {isThinking ? 'PROCESSING' : isActive ? 'LISTENING' : 'STANDBY'}
+            {isThinking ? 'PROCESSING' : isListening ? 'LISTENING...' : isActive ? `SAY "${(wakeWord || 'AYO').toUpperCase()}"` : 'STANDBY'}
           </span>
 
           {/* Context indicator */}

@@ -231,12 +231,12 @@ async def main():
     if WAKE_WORD_AVAILABLE:
         def on_wake_word():
             """Handle wake word detection."""
-            logger.info("Wake word 'Holo' detected!")
+            logger.info("Wake word 'Ayo' detected!")
             # Broadcast to all clients
             asyncio.run_coroutine_threadsafe(
                 broadcast({
                     "type": "wake_word:detected",
-                    "data": {"wake_word": "holo"},
+                    "data": {"wake_word": "ayo"},
                     "timestamp": datetime.now().isoformat()
                 }),
                 asyncio.get_event_loop()
@@ -244,7 +244,7 @@ async def main():
         
         wake_listener = get_wake_listener(callback=on_wake_word)
         if wake_listener.start():
-            logger.info("Wake word listener started (say 'Holo' to activate)")
+            logger.info("Wake word listener started (say 'Ayo' to activate)")
         else:
             logger.warning("Wake word listener failed to start")
     else:

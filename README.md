@@ -132,14 +132,14 @@ VoiceOS supports **dynamic voice commands** that understand application context:
 
 📄 **[Technical Details](docs/implementation/context_aware_voice_control.md)**
 
-## Wake Word ("Holo")
+## Wake Word ("Ayo" & Custom)
 
-Say **"Holo"** to activate voice recognition (requires additional setup):
+Say **"Ayo"** to activate voice recognition. You can also set a custom wake word:
 
-```bash
-brew install portaudio
-pip install openwakeword pyaudio
-```
+> **"Set nickname to Max"** or **"Call me Jarvis"**
+
+*   **Dynamic Variants**: The system automatically generates phonetically similar words (e.g., "Max" -> "marks", "macs") to ensure reliable detection even if the speech-to-text mishears.
+*   **Persistence**: Your custom wake word is saved and remembered on next launch.
 
 📄 **[Wake Word Setup Guide](docs/implementation/wake_word_walkthrough.md)**
 
@@ -155,7 +155,7 @@ VoiceOS uses a hybrid architecture:
 | `context_tracker.py` | Monitors focused macOS app |
 | `intent_parser.py` | Gemini-powered command interpretation |
 | `action_executor.py` | Executes keystrokes/shortcuts on macOS |
-| `wake_word_listener.py` | Listens for "Holo" wake word |
+| `wake_word_listener.py` | Listens for "Ayo" (and variants) wake word |
 
 ## Mock Mode (Development)
 

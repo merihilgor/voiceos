@@ -235,9 +235,9 @@ class IntentParser:
         lower = utterance.lower()
         import re
         
-        # Wake word detection - "Holo" often misheard as these
+        # Wake word detection - "Ayo" often misheard as these
         # Only trigger if it's standalone or followed by action words
-        wake_word_variants = ["holo", "hollow", "hold on", "holler", "hola"]
+        wake_word_variants = ["ayo", "hey yo", "a yo", "aio", "io"]
         action_words = ["open", "close", "play", "stop", "new", "go", "show", "start"]
         
         stripped = lower.strip()

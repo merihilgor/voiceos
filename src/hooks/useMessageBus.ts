@@ -18,7 +18,7 @@ export interface UseMessageBusOptions {
     autoConnect?: boolean;
     url?: string;
     onIntent?: (intent: string, data: Record<string, any>) => void;
-    onWakeWord?: () => void;  // Called when wake word "Holo" is detected
+    onWakeWord?: () => void;  // Called when wake word "Ayo" is detected
 }
 
 export function useMessageBus(options: UseMessageBusOptions = {}) {

@@ -1,10 +1,11 @@
 # VoiceOS Development Roadmap
 
 ## Phase 1: Core Optimization (Reduce Usage & Smarter AI)
-1. **[ ] Implement Wake Word Activation**
+1. **[x] Implement Wake Word Activation**
     - **Goal:** Stop "overuse of LLM" and bandwidth.
-    - Restrict LLM processing to commands prefixed with "Holo".
+    - Restrict LLM processing to commands prefixed with wake word (default: "Ayo").
     - Assistant remains in standby (listening locally) until wake word is detected.
+    - ✅ *Customizable via voice: "Set nickname to [word]" or "Call me [word]"*
 
 2. **[ ] Unified LLM-based Language Support**
     - **Goal:** Leverage LLM intelligence/removing legacy code.
@@ -16,10 +17,10 @@
     - Remove the specific code/libraries made obsolete by Step 2 (e.g., old language switchers).
     - General cleanup of unused files.
 
-## Phase 2: User Experience & Requirements
+## Phase 2: User Experience & Requirements 
 4. **[ ] Bandwidth Monitoring & Requirements**
-    - **Goal:** Visibility for the user.
-    - Implement real-time bandwidth usage indicator.
+    - **Goal:** Visibility for developers (debug mode only).
+    - Implement real-time bandwidth usage indicator (shown only when `VITE_DEBUG=true`).
     - Add "Minimum Requirement" checks (50Mbps Down / 10Mbps Up).
 
 ## Phase 3: Infrastructure

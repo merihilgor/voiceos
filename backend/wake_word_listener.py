@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Wake Word Listener - Listens for "Holo" wake word using OpenWakeWord.
+Wake Word Listener - Listens for "Ayo" wake word using OpenWakeWord.
 Runs as a background thread and notifies the MessageBus when detected.
 """
 
@@ -32,7 +32,7 @@ except ImportError:
 
 class WakeWordListener:
     """
-    Listens for the "Holo" wake word using OpenWakeWord.
+    Listens for the "Ayo" wake word using OpenWakeWord.
     When detected, calls the provided callback function.
     """
     
@@ -40,13 +40,13 @@ class WakeWordListener:
     SAMPLE_RATE = 16000
     CHUNK_SIZE = 1280  # ~80ms chunks at 16kHz
     
-    def __init__(self, callback: Optional[Callable] = None, wake_word: str = "holo"):
+    def __init__(self, callback: Optional[Callable] = None, wake_word: str = "ayo"):
         """
         Initialize the wake word listener.
         
         Args:
             callback: Function to call when wake word is detected
-            wake_word: The wake word to listen for (default: "holo")
+            wake_word: The wake word to listen for (default: "ayo")
         """
         self.callback = callback
         self.wake_word = wake_word.lower()
@@ -76,7 +76,7 @@ class WakeWordListener:
             openwakeword.utils.download_models()
             
             # Create model - uses pre-trained models
-            # For custom "Holo" word, we'd need to train a custom model
+            # For custom "Ayo" word, we'd need to train a custom model
             # For now, use "hey_jarvis" as a placeholder (similar pattern)
             self.model = OWWModel(
                 wakeword_models=["hey_jarvis"],  # Pre-trained model
@@ -226,10 +226,10 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
     def on_wake_word():
-        print("\n🎤 HOLO DETECTED! Listening for command...\n")
+        print("\n🎤 AYO DETECTED! Listening for command...\n")
     
     print("Starting wake word listener...")
-    print("Say 'Hey Jarvis' (placeholder for 'Holo') to trigger detection.")
+    print("Say 'Hey Jarvis' (placeholder for 'Ayo') to trigger detection.")
     print("Press Ctrl+C to stop.\n")
     
     listener = WakeWordListener(callback=on_wake_word)

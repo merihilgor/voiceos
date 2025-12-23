@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.0] - 2025-12-23 (Wake Word Customization)
+
+### Added
+- **Customizable Wake Word** - User can set a custom wake word (nickname) via voice command
+  - Command: "Set nickname to [name]" or "Call me [name]"
+  - Persists across sessions using `localStorage`
+  - Visual feedback in VoiceOrb shows the active wake word (e.g., 'SAY "MAX"')
+- **Dynamic Phonetic Variants** - LLM-powered variant generation for robust wake word detection
+  - Uses Gemini to generate 5+ phonetically similar words (e.g., "Max" -> "marks", "macs", "max's")
+  - Automatically handles mishearings by speech recognition
+- **Wake Word Gating** - LLM commands are now gated behind the wake word
+  - Prevents accidental LLM usage and reduces bandwidth costs
+  - 10-second listening window after wake word detection (auto-reset to standby)
+  - Visual indicator: Cyan "LISTENING..." state vs Pink "SAY [NAME]" standby state
+- **New Default Wake Word**: "Ayo" (replaces "Holo")
+
+### Changed
+- **Wake Word Engine**: Switched from "Holo" to dynamic regex-based matching with "Ayo" default
+- VoiceOrb: Added `wakeWord` and `isListening` props for better state visualization
+
+---
+
 ## [0.2.0] - 2025-12-22
 
 ### Added
@@ -71,6 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/merihilgor/voiceos/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/merihilgor/voiceos/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/merihilgor/voiceos/releases/tag/v0.3.0
 [0.2.0]: https://github.com/merihilgor/voiceos/releases/tag/v0.2.0
 [0.1.0]: https://github.com/merihilgor/voiceos/releases/tag/v0.1.0

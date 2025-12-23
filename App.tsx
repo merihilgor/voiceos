@@ -27,6 +27,16 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string>(''); // Live speech transcript
   const [speechLang, setSpeechLang] = useState<string>('en-US'); // Speech recognition language
+  const [isListening, setIsListening] = useState(false); // Wake word gating - only send to LLM when true
+  const [wakeWord, setWakeWord] = useState<string>(() => {
+    // Load custom wake word from localStorage, default to 'ayo'
+    return localStorage.getItem('voiceos_wakeword') || 'ayo';
+  });
+  const [wakeWordVariants, setWakeWordVariants] = useState<string[]>(() => {
+    // Load variants from localStorage
+    const stored = localStorage.getItem('voiceos_wakeword_variants');
+    return stored ? JSON.parse(stored) : ['ayo', 'hey yo', 'a yo', 'aio'];
+  });
 
   // Refs for Audio Contexts to avoid recreation
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -34,6 +44,10 @@ export default function App() {
   const audioStreamRef = useRef<MediaStream | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const listeningTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Wake word timeout
+
+  // Debug mode
+  const DEBUG = import.meta.env.VITE_DEBUG === 'true';
 
   // --- OVOS MessageBus Integration ---
   const handleOvosIntent = useCallback((intent: string, data: Record<string, any>) => {
@@ -63,13 +77,103 @@ export default function App() {
     }
   }, []);
 
-  // Wake word handler - triggered when backend detects "Holo"
+  // Wake word handler - triggered when backend or user says the wake word
+  const activateListening = useCallback(() => {
+    if (DEBUG) console.log(`[DEBUG:WakeWord] ${wakeWord} detected, isListening = true`);
+    console.log(`🎤 ${wakeWord.charAt(0).toUpperCase() + wakeWord.slice(1)} detected! Activating voice...`);
+    setIsListening(true);
+
+    // Clear any existing timeout
+    if (listeningTimeoutRef.current) {
+      clearTimeout(listeningTimeoutRef.current);
+    }
+
+    // Auto-reset after 10 seconds of no commands
+    listeningTimeoutRef.current = setTimeout(() => {
+      if (DEBUG) console.log('[DEBUG:WakeWord] Listening timeout - resetting to standby');
+      console.log('💤 Listening timeout - returning to standby');
+      setIsListening(false);
+    }, 10000);
+  }, [DEBUG, wakeWord]);
+
+  // Generate wake word variants using LLM
+  const generateVariants = useCallback(async (word: string): Promise<string[]> => {
+    // Always include the base word
+    const baseVariants = [word];
+
+    try {
+      if (DEBUG) console.log('[DEBUG:Variants] Calling LLM for variants of:', word);
+
+      const response = await fetch('/api/ollama/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: import.meta.env.VITE_OLLAMA_MODEL || 'gemini-3-flash-preview',
+          messages: [{
+            role: 'user',
+            content: `List 5 words that sound phonetically similar to "${word}" or that speech recognition might mishear as "${word}". Return ONLY a JSON array of lowercase strings. Example: ["macs", "max's", "marks"]`
+          }],
+          temperature: 0.3,
+          max_tokens: 200  // Increased from 100 to prevent truncation
+        })
+      });
+
+      if (!response.ok) {
+        console.warn(`[Variants] API returned ${response.status}`);
+        return baseVariants;
+      }
+
+      const data = await response.json();
+      if (DEBUG) console.log('[DEBUG:Variants] Raw response:', data);
+
+      const content = data.choices?.[0]?.message?.content || '';
+      if (DEBUG) console.log('[DEBUG:Variants] Content:', content);
+
+      // Extract JSON array from response - handle incomplete JSON
+      const match = content.match(/\[[\s\S]*?\]/);
+      if (match) {
+        try {
+          const variants = JSON.parse(match[0]) as string[];
+          const allVariants = [word, ...variants.map((v: string) => v.toLowerCase().trim())];
+          if (DEBUG) console.log('[DEBUG:Variants] Parsed variants:', allVariants);
+          return allVariants;
+        } catch (parseError) {
+          console.warn('[Variants] Failed to parse JSON:', match[0], parseError);
+        }
+      } else {
+        console.warn('[Variants] No JSON array found in response:', content);
+      }
+    } catch (e) {
+      console.warn('Failed to generate variants:', e);
+    }
+
+    // Fallback: return just the word
+    return baseVariants;
+  }, [DEBUG]);
+
+  // Set custom wake word (nickname)
+  const setNickname = useCallback(async (newName: string): Promise<boolean> => {
+    const normalized = newName.toLowerCase().trim();
+    if (normalized.length >= 2 && normalized.length <= 15) {
+      setWakeWord(normalized);
+      localStorage.setItem('voiceos_wakeword', normalized);
+
+      // Generate variants via LLM
+      console.log(`⏳ Generating variants for "${normalized}"...`);
+      const variants = await generateVariants(normalized);
+      setWakeWordVariants(variants);
+      localStorage.setItem('voiceos_wakeword_variants', JSON.stringify(variants));
+
+      console.log(`✅ Wake word changed to: "${normalized}"`);
+      console.log(`📝 Variants: ${variants.join(', ')}`);
+      return true;
+    }
+    return false;
+  }, [generateVariants]);
+
   const handleWakeWord = useCallback(() => {
-    console.log('🎤 Holo detected! Activating voice...');
-    // Visual feedback - could trigger speech recognition start
-    // For now, the speech recognition is always on in mock mode
-    // In the future, this could toggle a "listening" state
-  }, []);
+    activateListening();
+  }, [activateListening]);
 
   const { isConnected: isOvosConnected, sendUtterance } = useMessageBus({
     autoConnect: true,
@@ -448,25 +552,59 @@ export default function App() {
         return allWords.slice(-15).join(' ');
       });
 
-      // Voice command: Switch language
-      // Turkish mode: "İngilizce", "English", "ingilizceye geç", "switch to English"
-      // English mode: "Türkçe", "Turkish", "türkçeye geç", "switch to Turkish"
-      const switchToEnglish = lower.includes('english') || lower.includes('ingilizce');
-      const switchToTurkish = lower.includes('turkish') || lower.includes('türkçe');
-
-      if (switchToTurkish && speechLang !== 'tr-TR') {
-        setSpeechLang('tr-TR');
-        setTranscript('');
-        console.log("Switching to Turkish...");
-        return;
-      }
-      if (switchToEnglish && speechLang !== 'en-US') {
-        setSpeechLang('en-US');
-        setTranscript('');
-        console.log("Switching to English...");
+      // Check for "set nickname" voice command (works even without wake word)
+      // Requires: "set nickname to [word]" or "call me/yourself [word]"
+      const nicknameMatch = lower.match(/(?:set\s+(?:my\s+)?nickname\s+to\s+|call\s+(?:me|yourself)\s+)(\w+)/i);
+      if (nicknameMatch && nicknameMatch[1]) {
+        const newName = nicknameMatch[1];
+        if (setNickname(newName)) {
+          // Provide feedback
+          if (DEBUG) console.log(`[DEBUG:WakeWord] Nickname set to: ${newName}`);
+        }
         return;
       }
 
+      // Use dynamically generated wake word variants from LLM (stored in state)
+      // Escape special regex chars and build pattern
+      const escapedVariants = wakeWordVariants.map(v => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      // Match at word boundary OR at start of string
+      const wakeWordPattern = new RegExp(`(?:^|\\b)(${escapedVariants.join('|')})(?:\\b|\\s|$)`, 'i');
+      const wakeMatch = lower.match(wakeWordPattern);
+
+      if (wakeMatch) {
+        // Activate listening mode
+        activateListening();
+
+        // Extract command after wake word (if any)
+        const matchIndex = lower.indexOf(wakeMatch[0]);
+        const afterWake = text.substring(matchIndex + wakeMatch[0].length).trim();
+
+        if (afterWake) {
+          // Send the command part (without the wake word)
+          if (DEBUG) console.log(`[DEBUG:WakeWord] Command after ${wakeWord}:`, afterWake);
+
+          if (session) {
+            session.then((s: any) => {
+              if (s.sendText) s.sendText(afterWake);
+            });
+          }
+          if (isOvosConnected) {
+            sendUtterance(afterWake);
+          }
+        }
+        return; // Don't process further - we handled it
+      }
+
+      // Only send to LLM if we're in listening mode (wake word was said recently)
+      if (!isListening) {
+        if (DEBUG) console.log('[DEBUG:WakeWord] Command gated - isListening is false, ignoring:', text);
+        return;
+      }
+
+      // Reset the listening timeout on each command (extend the window)
+      activateListening();
+
+      // Send to LLM
       if (text && session) {
         session.then((s: any) => {
           if (s.sendText) s.sendText(text);
@@ -622,6 +760,8 @@ export default function App() {
           <VoiceOrb
             isActive={isVoiceActive}
             isThinking={isThinking}
+            isListening={isListening}
+            wakeWord={wakeWord}
             volumeLevel={audioLevel}
             onClick={() => { }}
             context={currentContext}
