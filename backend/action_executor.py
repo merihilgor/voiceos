@@ -100,6 +100,9 @@ class ActionExecutor:
                 result = self._close_app(data.get("app", ""))
             elif action_type == "speak":
                 result = self._speak(data.get("text", ""))
+            elif action_type == "noop":
+                # No operation - used when frontend handles intent
+                result = {"success": True, "message": "Noop - handled by frontend"}
             else:
                 result = {"success": False, "message": f"Unknown action: {action_type}"}
             

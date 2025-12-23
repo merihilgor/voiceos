@@ -34,8 +34,8 @@ except ImportError:
 
 # Default configuration
 DEFAULT_OLLAMA_BASE_URL = "https://ollama.com/v1"
-DEFAULT_OLLAMA_MODEL = "gemma3:4b"
-DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
+DEFAULT_OLLAMA_MODEL = "gemini-3-flash-preview"
+DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
 
 
 # System prompt for LLM
@@ -166,6 +166,17 @@ class IntentParser:
         """
         app_name = context.get("name", "Unknown")
         app_type = context.get("type", "other")
+        
+        # When any LLM provider is configured, the frontend handles intent parsing
+        # Skip backend parsing to avoid duplicate processing
+        # Only use backend parsing when no provider is set (fallback mode)
+        if self.provider:  # Any provider: gemini, ollama, openai, etc.
+            logger.info(f"Skipping backend parsing - frontend {self.provider} handles intent")
+            return {
+                "action": "noop",
+                "data": {"reason": f"Frontend {self.provider} handles intent parsing"},
+                "confidence": 1.0
+            }
         
         # Check if we have any LLM available
         if not self.model and not self.client:

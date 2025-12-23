@@ -101,7 +101,7 @@ sleep 1
 
 # Start Node.js API Server (handles /api/execute for macOS commands)
 echo "Starting API Server on http://localhost:3001..."
-node server/index.js &
+LLM_PROVIDER="$LLM_PROVIDER" LLM_MODEL="$LLM_MODEL" GEMINI_API_KEY="$GEMINI_API_KEY" OLLAMA_API_KEY="$OLLAMA_API_KEY" OLLAMA_BASE_URL="$OLLAMA_BASE_URL" node server/index.js &
 API_PID=$!
 
 # Give API server time to start

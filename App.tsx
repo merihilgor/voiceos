@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FunctionDeclaration, Type, GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { MockGeminiService } from './services/MockGeminiService';
+import { OllamaService } from './services/OllamaService';
 import { VoiceOrb } from './components/ui/VoiceOrb';
 import { useMessageBus } from './src/hooks/useMessageBus';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioUtils';
@@ -173,35 +174,65 @@ export default function App() {
       setIsThinking(false);
 
       // Debug: Log API Key presence
-      // Check for Mock Mode
+      // Check for Mock Mode and LLM Provider
       const urlParams = new URLSearchParams(window.location.search);
-      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      const geminiApiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      const ollamaApiKey = process.env.OLLAMA_API_KEY;
+      const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'https://ollama.com/v1';
+      const llmModel = process.env.LLM_MODEL;
+      const llmProvider = (process.env.LLM_PROVIDER || 'gemini').toLowerCase();
       const envMock = import.meta.env.VITE_MOCK_MODE === 'true';
-      const useMock = urlParams.get('mock') === 'true' || envMock || !apiKey;
+      const useMock = urlParams.get('mock') === 'true' || envMock;
+      const useOllama = llmProvider === 'ollama' && ollamaApiKey;
 
-      console.log("API Key present:", !!apiKey);
+      console.log("LLM Provider:", llmProvider);
+      console.log("Gemini API Key present:", !!geminiApiKey);
+      console.log("Ollama API Key present:", !!ollamaApiKey);
       console.log("Mock Mode:", useMock);
+      console.log("Use Ollama:", useOllama);
 
-      if (!apiKey && !useMock) {
-        console.error("ERROR: No API key found. Set GEMINI_API_KEY in .env.local");
+      // Check for valid provider configuration
+      if (!useMock && !useOllama && !geminiApiKey) {
+        console.error("ERROR: No valid LLM provider configured. Set GEMINI_API_KEY or OLLAMA_API_KEY in .env.local");
+        setErrorMessage("No LLM provider configured. Set GEMINI_API_KEY or OLLAMA_API_KEY in .env.local");
         setIsVoiceActive(false);
         return;
       }
 
-      // Audio Setup
-      inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      // Audio Setup - only needed for Gemini Live (real-time audio streaming)
+      // Mock and Ollama modes use browser SpeechRecognition instead
+      const needsAudioStream = !useMock && !useOllama;
 
-      // Input Stream
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStreamRef.current = stream;
-      console.log("Microphone access granted");
+      if (needsAudioStream) {
+        inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+        outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
 
-      const ai = useMock
-        ? new MockGeminiService({ apiKey: "mock" })
-        : new GoogleGenAI({ apiKey: apiKey! });
+        // Input Stream - only for Gemini Live
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStreamRef.current = stream;
+        console.log("Microphone access granted for Gemini Live");
+      } else {
+        console.log("Skipping audio setup - using browser SpeechRecognition");
+      }
 
-      console.log("Connecting to Gemini Live...");
+      // Select AI service based on provider
+      let ai: any;
+      if (useMock) {
+        ai = new MockGeminiService({ apiKey: "mock" });
+        console.log("Using Mock Gemini Service");
+      } else if (useOllama) {
+        ai = new OllamaService({
+          apiKey: ollamaApiKey!,
+          baseUrl: ollamaBaseUrl,
+          model: llmModel || 'gemma3:4b'
+        });
+        console.log("Using Ollama Service");
+      } else {
+        ai = new GoogleGenAI({ apiKey: geminiApiKey! });
+        console.log("Using Google Gemini Live");
+      }
+
+      console.log("Connecting to AI service...");
       const sessionPromise = ai.live.connect({
         // Use gemini-1.5-flash for stable Live API support
         model: 'gemini-2.0-flash-exp',
@@ -216,10 +247,10 @@ export default function App() {
         callbacks: {
           onopen: () => {
             console.log("VoiceOS: Connected");
-            // Start processing input audio
-            if (!inputAudioContextRef.current) return;
+            // Start processing input audio - only for Gemini Live mode
+            if (!inputAudioContextRef.current || !audioStreamRef.current) return;
 
-            const source = inputAudioContextRef.current.createMediaStreamSource(stream);
+            const source = inputAudioContextRef.current.createMediaStreamSource(audioStreamRef.current);
             const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
 
             // Throttle: Only process every Nth frame to reduce CPU load
@@ -375,16 +406,12 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Speech Recognition for Mock Mode (Voice-to-Text)
+  // Speech Recognition - Always enabled for voice input
+  // Works with all providers (Gemini, Ollama, Mock) as universal voice input
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-    const envMock = (import.meta as any).env.VITE_MOCK_MODE === 'true';
-    const useMock = urlParams.get('mock') === 'true' || envMock || !apiKey;
+    console.log("Speech Recognition Effect - session:", !!session);
 
-    console.log("Speech Recognition Effect - useMock:", useMock, "session:", !!session);
-
-    if (!useMock || !session) return;
+    if (!session) return;
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -453,13 +480,18 @@ export default function App() {
     };
 
     let isActive = true; // Track if this effect instance is still active
+    let isPausedForTTS = false; // Track if paused for TTS output
 
     recognition.onerror = (event: any) => {
       console.error("Speech Recognition Error:", event.error);
-      // Don't restart on aborted (happens during language switch)
-      if (event.error === 'aborted' || event.error === 'no-speech') return;
-      // Only restart if this effect is still active
-      if (isActive) {
+      // Don't restart on aborted (happens during language switch) or no-speech
+      if (event.error === 'aborted' || event.error === 'no-speech') {
+        console.log("Speech: Will restart via onend handler");
+        return;
+      }
+      // Only restart if this effect is still active and not paused for TTS
+      if (isActive && !isPausedForTTS) {
+        console.log("Speech: Restarting after error...");
         setTimeout(() => {
           try { recognition.start(); } catch (e) { /* ignore */ }
         }, 500);
@@ -467,18 +499,50 @@ export default function App() {
     };
 
     recognition.onend = () => {
-      // Only restart if this effect instance is still active
-      if (isActive) {
-        try { recognition.start(); } catch (e) { /* ignore */ }
+      // Only restart if this effect instance is still active AND not paused for TTS
+      // Add delay to prevent rapid restart loop
+      if (isActive && !isPausedForTTS) {
+        setTimeout(() => {
+          if (isActive && !isPausedForTTS) {
+            console.log("Speech: Recognition restarting...");
+            try { recognition.start(); } catch (e) { /* ignore */ }
+          }
+        }, 1000);
+      } else if (isPausedForTTS) {
+        console.log("Speech: Not restarting - paused for TTS");
       }
     };
+
+    // Listen for TTS events to pause/resume recognition (prevent feedback loop)
+    const handleTTSStart = () => {
+      console.log("Speech: Pausing for TTS output");
+      isPausedForTTS = true;
+      try { recognition.stop(); } catch (e) { /* ignore */ }
+    };
+
+    const handleTTSEnd = () => {
+      console.log("Speech: Resuming after TTS output");
+      isPausedForTTS = false;
+      setTimeout(() => {
+        if (isActive && !isPausedForTTS) {
+          console.log("Speech: Starting recognition after TTS");
+          try { recognition.start(); } catch (e) { /* ignore */ }
+        }
+      }, 500); // Small delay after TTS ends
+    };
+
+    window.addEventListener('voiceos:tts:start', handleTTSStart);
+    window.addEventListener('voiceos:tts:end', handleTTSEnd);
 
     recognition.start();
     console.log(`Mock Mode: Speech Recognition started (${speechLang}).`);
 
     return () => {
       isActive = false; // Mark as inactive before stopping
+      isPausedForTTS = false;
       recognition.stop();
+      window.removeEventListener('voiceos:tts:start', handleTTSStart);
+      window.removeEventListener('voiceos:tts:end', handleTTSEnd);
     };
   }, [session, speechLang]);
 
@@ -537,9 +601,9 @@ export default function App() {
           <span
             className="px-3 py-1 rounded-full text-xs font-medium"
             style={{
-              background: isVoiceActive ? 'rgba(255,107,157,0.15)' : 'rgb(31,41,55)',
-              color: isVoiceActive ? '#ff6b9d' : 'rgb(156,163,175)',
-              border: isVoiceActive ? '1px solid rgba(255,107,157,0.3)' : 'none'
+              background: isVoiceActive ? 'rgba(34,197,94,0.15)' : 'rgb(31,41,55)',
+              color: isVoiceActive ? '#22c55e' : 'rgb(156,163,175)',
+              border: isVoiceActive ? '1px solid rgba(34,197,94,0.3)' : 'none'
             }}
           >
             {isVoiceActive ? '● ACTIVE' : '○ STANDBY'}

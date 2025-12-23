@@ -15,7 +15,11 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.LLM_PROVIDER': JSON.stringify(env.LLM_PROVIDER || 'gemini'),
+      'process.env.LLM_MODEL': JSON.stringify(env.LLM_MODEL || ''),
+      'process.env.OLLAMA_API_KEY': JSON.stringify(env.OLLAMA_API_KEY || ''),
+      'process.env.OLLAMA_BASE_URL': JSON.stringify(env.OLLAMA_BASE_URL || 'https://ollama.com/v1')
     },
     resolve: {
       alias: {
