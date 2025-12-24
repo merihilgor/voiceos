@@ -644,39 +644,9 @@ Reply with ONLY the JSON: {"app": "Full App Name"}`;
         return allWords.slice(-15).join(' ');
       });
 
-      // Check for "set nickname" voice command (works even without wake word)
-      // Requires: "set nickname to [word]" or "call me/yourself [word]"
-      const nicknameMatch = lower.match(/(?:set\s+(?:my\s+)?nickname\s+to\s+|call\s+(?:me|yourself)\s+)(\w+)/i);
-      if (nicknameMatch && nicknameMatch[1]) {
-        const newName = nicknameMatch[1];
-        if (setNickname(newName)) {
-          // Provide feedback
-          if (DEBUG) console.log(`[DEBUG:WakeWord] Nickname set to: ${newName}`);
-        }
-        return;
-      }
-
-      // Check for language switch voice command
-      // Matches: "switch to Turkish", "speak English", "Türkçe konuş", etc.
-      const langMap: Record<string, string> = {
-        'turkish': 'tr-TR', 'türkçe': 'tr-TR', 'turkce': 'tr-TR',
-        'english': 'en-US', 'ingilizce': 'en-US',
-        'german': 'de-DE', 'almanca': 'de-DE',
-        'french': 'fr-FR', 'fransızca': 'fr-FR',
-        'spanish': 'es-ES', 'ispanyolca': 'es-ES',
-      };
-      const langMatch = lower.match(/(?:switch\s+to|speak|konuş|dil(?:i)?|language)\s+(\w+)/i)
-        || lower.match(/^(türkçe|english|turkish|ingilizce)$/i);
-      if (langMatch) {
-        const langKey = (langMatch[1] || langMatch[0]).toLowerCase();
-        const newLang = langMap[langKey];
-        if (newLang && newLang !== speechLang) {
-          setSpeechLang(newLang);
-          localStorage.setItem('voiceos_speechlang', newLang);
-          console.log(`🌍 Language switched to: ${newLang}`);
-          return;
-        }
-      }
+      // DESIGN PRINCIPLE: No hardcoded voice patterns!
+      // ALL voice commands go to LLM for multi-language interpretation.
+      // The LLM will return actions like set_nickname, switch_language, etc.
 
       // Use dynamically generated wake word variants from LLM (stored in state)
       // Escape special regex chars and build pattern
@@ -796,7 +766,30 @@ Reply with ONLY the JSON: {"app": "Full App Name"}`;
       window.removeEventListener('voiceos:tts:start', handleTTSStart);
       window.removeEventListener('voiceos:tts:end', handleTTSEnd);
     };
-  }, [session, speechLang]);
+  }, [session, speechLang, wakeWordVariants]); // Added wakeWordVariants to re-run on nickname change
+
+  // LLM-dispatched commands listener (separate from recognition to avoid closure issues)
+  useEffect(() => {
+    const handleSetNickname = (e: Event) => {
+      const detail = (e as CustomEvent<{ name: string }>).detail;
+      console.log(`🏷️ LLM requested nickname change to: ${detail.name}`);
+      setNickname(detail.name);
+    };
+    const handleSwitchLanguage = (e: Event) => {
+      const detail = (e as CustomEvent<{ lang: string }>).detail;
+      console.log(`🌍 LLM requested language switch to: ${detail.lang}`);
+      setSpeechLang(detail.lang);
+      localStorage.setItem('voiceos_speechlang', detail.lang);
+    };
+
+    window.addEventListener('voiceos:set_nickname', handleSetNickname);
+    window.addEventListener('voiceos:switch_language', handleSwitchLanguage);
+
+    return () => {
+      window.removeEventListener('voiceos:set_nickname', handleSetNickname);
+      window.removeEventListener('voiceos:switch_language', handleSwitchLanguage);
+    };
+  }, [setNickname]);
 
   // --- Rendering ---
   return (

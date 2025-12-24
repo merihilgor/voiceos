@@ -183,22 +183,24 @@ export class OllamaService {
 
 OUTPUT: Return ONLY a single JSON object. Pick the most appropriate action:
 
-{"action": "open_app", "app": "FullAppName"}     - Open application (use full name)
-{"action": "close_app", "app": "FullAppName"}    - Close application
-{"action": "open_path", "path": "~/path"}        - Open folder/file path
-{"action": "shortcut", "keys": "cmd+key"}        - Keyboard shortcut (cmd+n, tab, etc.)
-{"action": "keystrokes", "keys": "text"}         - Type text into active field
-{"action": "click", "x": 100, "y": 200}          - Click at screen coordinates
-{"action": "scroll", "direction": "up|down"}     - Scroll page
-{"action": "speak", "text": "response"}          - Voice response (ONLY if truly ambiguous)
+{"action": "open_app", "app": "FullAppName"}       - Open application (use full name)
+{"action": "close_app", "app": "FullAppName"}      - Close application
+{"action": "open_path", "path": "~/path"}          - Open folder/file path
+{"action": "shortcut", "keys": "cmd+key"}          - Keyboard shortcut (cmd+n, tab, etc.)
+{"action": "keystrokes", "keys": "text"}           - Type text into active field
+{"action": "click", "x": 100, "y": 200}            - Click at screen coordinates
+{"action": "scroll", "direction": "up|down"}       - Scroll page
+{"action": "set_nickname", "name": "newname"}      - Set wake word/nickname
+{"action": "switch_language", "lang": "tr-TR"}     - Switch speech language (tr-TR, en-US, de-DE, fr-FR, es-ES)
+{"action": "speak", "text": "response"}            - Voice response (ONLY if truly ambiguous)
 
 BEHAVIOR:
 - Understand intent in any language, output JSON
-- For "new message/window" type commands → shortcut cmd+n
+- For "call me X" / "nickname X" / "takma adın X" → set_nickname
+- For "switch to Turkish" / "Türkçe" / "speak English" → switch_language
+- For "new message/window" → shortcut cmd+n
 - For "type/write X" → keystrokes with X
 - For "go to next field" → shortcut tab
-- For "delete/clear" → shortcut cmd+a, then backspace
-- For "correct/replace with X" → shortcut cmd+a, then keystrokes X
 - Use full app names (e.g., "Microsoft Outlook" not "Outlook")
 - NO explanations, ONLY JSON`
                         },
@@ -345,6 +347,18 @@ BEHAVIOR:
         } else if (parsed.action === 'speak' && parsed.text) {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: speak response');
             this.simulateResponse(parsed.text);
+        } else if (parsed.action === 'set_nickname' && parsed.name) {
+            if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: set_nickname');
+            // Dispatch event for App.tsx to handle
+            window.dispatchEvent(new CustomEvent('voiceos:set_nickname', { detail: { name: parsed.name } }));
+            this.simulateResponse(`Wake word changed to ${parsed.name}`);
+            analytics.trackCommand(originalText, 'set_nickname', true, { toolCall: { name: parsed.name } });
+        } else if (parsed.action === 'switch_language' && parsed.lang) {
+            if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: switch_language');
+            // Dispatch event for App.tsx to handle
+            window.dispatchEvent(new CustomEvent('voiceos:switch_language', { detail: { lang: parsed.lang } }));
+            this.simulateResponse(`Language switched to ${parsed.lang}`);
+            analytics.trackCommand(originalText, 'switch_language', true, { toolCall: { lang: parsed.lang } });
         } else {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → No matching action, using fallback');
             this.simulateResponse(`I heard "${originalText}" but I'm not sure how to handle it.`);
