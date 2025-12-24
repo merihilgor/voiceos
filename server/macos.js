@@ -20,15 +20,27 @@ export async function executeJXA(script) {
 }
 
 // Helper to open an app by name
+// DESIGN PRINCIPLE: No hardcoded app names or aliases!
+// App names vary across systems and evolve over time.
+// The LLM should resolve user intent to correct app names dynamically.
 export async function openApp(appName) {
-    // Legacy: const script = `Application('${appName}').activate()`;
-    // return executeJXA(script);
-
-    // Safer/Simpler implementation (does not require JXA/AppleEvents permission, just LaunchServices)
     const command = `open -a "${appName}"`;
-    const { stdout } = await execPromise(command);
-    return stdout;
+    console.log(`[openApp] Opening: ${appName}`);
+
+    try {
+        const { stdout } = await execPromise(command);
+        console.log(`[openApp] Success: ${appName}`);
+        return { opened: appName };
+    } catch (error) {
+        // Return meaningful error for LLM feedback loop
+        const errorMsg = error.stderr || error.message;
+        console.error(`[openApp] Failed: ${appName} - ${errorMsg}`);
+
+        // Include suggestion in error for LLM self-correction
+        throw new Error(`Unable to find application "${appName}". The LLM should suggest the correct full app name (e.g., "Microsoft Outlook" instead of "Outlook", "Google Chrome" instead of "Chrome").`);
+    }
 }
+
 
 // Helper to close an app by name
 export async function closeApp(appName) {

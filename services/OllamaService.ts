@@ -179,41 +179,28 @@ export class OllamaService {
                     messages: [
                         {
                             role: 'system',
-                            content: `You are VoiceOS, a voice assistant for macOS. Parse the user's command and respond with a JSON object.
+                            content: `You are VoiceOS, a voice assistant for macOS. Parse voice commands in ANY language.
 
-Available actions:
+OUTPUT: Return ONLY a single JSON object. Pick the most appropriate action:
 
-1. Open/close apps:
-{"action": "open_app", "app": "AppName"}
-{"action": "close_app", "app": "AppName"}
+{"action": "open_app", "app": "FullAppName"}     - Open application (use full name)
+{"action": "close_app", "app": "FullAppName"}    - Close application
+{"action": "open_path", "path": "~/path"}        - Open folder/file path
+{"action": "shortcut", "keys": "cmd+key"}        - Keyboard shortcut (cmd+n, tab, etc.)
+{"action": "keystrokes", "keys": "text"}         - Type text into active field
+{"action": "click", "x": 100, "y": 200}          - Click at screen coordinates
+{"action": "scroll", "direction": "up|down"}     - Scroll page
+{"action": "speak", "text": "response"}          - Voice response (ONLY if truly ambiguous)
 
-2. Navigate to folder (in Finder):
-{"action": "open_path", "path": "~/Downloads"}
-{"action": "open_path", "path": "~/Documents"}
-{"action": "open_path", "path": "~/Desktop"}
-{"action": "open_path", "path": "/Applications"}
-
-3. Open file:
-{"action": "open_path", "path": "~/Documents/file.pdf"}
-
-4. Keyboard shortcut:
-{"action": "shortcut", "keys": "cmd+z"}
-{"action": "shortcut", "keys": "cmd+shift+n"}
-
-5. Type text:
-{"action": "keystrokes", "keys": "hello world"}
-
-6. Speak a response:
-{"action": "speak", "text": "Your response"}
-
-EXAMPLES:
-- "go to downloads" → {"action": "open_path", "path": "~/Downloads"}
-- "open documents folder" → {"action": "open_path", "path": "~/Documents"}
-- "open Calculator" → {"action": "open_app", "app": "Calculator"}
-- "close Safari" → {"action": "close_app", "app": "Safari"}
-- "undo" → {"action": "shortcut", "keys": "cmd+z"}
-
-CRITICAL: Output ONLY valid JSON, no explanation. Keep response short.`
+BEHAVIOR:
+- Understand intent in any language, output JSON
+- For "new message/window" type commands → shortcut cmd+n
+- For "type/write X" → keystrokes with X
+- For "go to next field" → shortcut tab
+- For "delete/clear" → shortcut cmd+a, then backspace
+- For "correct/replace with X" → shortcut cmd+a, then keystrokes X
+- Use full app names (e.g., "Microsoft Outlook" not "Outlook")
+- NO explanations, ONLY JSON`
                         },
                         { role: 'user', content: text }
                     ],
@@ -347,6 +334,14 @@ CRITICAL: Output ONLY valid JSON, no explanation. Keep response short.`
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: open_path execution');
             // Open file or folder via backend
             this.executeAction('open_path', { path: parsed.path });
+        } else if (parsed.action === 'click' && (parsed.x !== undefined || parsed.element)) {
+            if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: click execution');
+            // Click at coordinates or element
+            this.executeAction('click', { x: parsed.x, y: parsed.y, button: parsed.button || 'left' });
+        } else if (parsed.action === 'scroll' && parsed.direction) {
+            if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: scroll execution');
+            // Scroll in direction
+            this.executeAction('scroll', { direction: parsed.direction, amount: parsed.amount || 3 });
         } else if (parsed.action === 'speak' && parsed.text) {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: speak response');
             this.simulateResponse(parsed.text);
@@ -397,13 +392,19 @@ CRITICAL: Output ONLY valid JSON, no explanation. Keep response short.`
             if (response.ok) {
                 const result = await response.json();
                 console.log(`OllamaService: ${action} executed`, result);
+                // Track actual execution success
+                analytics.trackCommand(`exec:${action}`, action, true, { toolCall: result });
             } else {
                 console.error(`OllamaService: ${action} failed`, response.status);
                 this.simulateResponse(`Failed to execute ${action}`);
+                // Track execution failure
+                analytics.trackCommand(`exec:${action}`, action, false, { error: `HTTP ${response.status}` });
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error(`OllamaService: ${action} error`, error);
             this.simulateResponse(`Error executing ${action}`);
+            // Track execution error
+            analytics.trackCommand(`exec:${action}`, action, false, { error: error.message });
         }
     }
 

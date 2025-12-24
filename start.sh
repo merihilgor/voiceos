@@ -37,14 +37,36 @@ fi
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 
-# Trap Ctrl+C to kill all child processes
+# Single Instance Lock - Ensure only one VoiceOS is running
+LOCK_FILE="/tmp/voiceos.lock"
+LOCK_PID=""
+
+if [ -f "$LOCK_FILE" ]; then
+    LOCK_PID=$(cat "$LOCK_FILE")
+    if ps -p "$LOCK_PID" > /dev/null 2>&1; then
+        echo "❌ ERROR: VoiceOS is already running (PID: $LOCK_PID)"
+        echo "   To stop it: kill $LOCK_PID"
+        echo "   Or remove lock: rm $LOCK_FILE"
+        exit 1
+    else
+        echo "⚠️  Stale lock file found. Cleaning up..."
+        rm -f "$LOCK_FILE"
+    fi
+fi
+
+# Write our PID to lock file
+echo $$ > "$LOCK_FILE"
+echo "🔒 Single instance lock acquired (PID: $$)"
+
+# Trap Ctrl+C to kill all child processes and remove lock
 cleanup() {
     echo ""
     echo "Shutting down..."
+    rm -f "$LOCK_FILE"
     kill 0 2>/dev/null
     exit 0
 }
-trap cleanup SIGINT SIGTERM
+trap cleanup SIGINT SIGTERM EXIT
 
 # Check Python environment for OVOS
 if [ ! -d "backend/venv" ]; then

@@ -3,7 +3,11 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import fs from 'fs';
 import path from 'path';
+import { exec } from 'child_process';
+import util from 'util';
 import { executeJXA, openApp, closeApp, setVolume, sendShortcut, typeKeystrokes, openPath, clickAt } from './macos.js';
+
+const execPromise = util.promisify(exec);
 
 const app = express();
 const PORT = 3001;
@@ -52,6 +56,22 @@ app.post('/api/execute', async (req, res) => {
             case 'open_path':
                 // Open file or folder
                 result = await openPath(params.path);
+                break;
+            case 'click':
+                // Click at coordinates
+                result = await clickAt(params.x, params.y, params.button || 'left');
+                break;
+            case 'scroll':
+                // Scroll using arrow key codes via AppleScript
+                const scrollAmount = params.amount || 3;
+                const direction = params.direction || 'down';
+                const keyCode = direction === 'up' ? 126 : 125;  // Up=126, Down=125
+                // Execute arrow key presses for scroll
+                for (let i = 0; i < scrollAmount; i++) {
+                    const scrollCmd = `osascript -e 'tell application "System Events" to key code ${keyCode}'`;
+                    await execPromise(scrollCmd).catch(() => { });
+                }
+                result = `Scrolled ${direction} ${scrollAmount} times`;
                 break;
             case 'eval':
                 // CAUTION: Only acceptable for local MVP. 
@@ -201,7 +221,7 @@ app.post('/api/vision', async (req, res) => {
                         ]
                     }],
                     temperature: 0.1,
-                    max_tokens: 500
+                    max_tokens: 1000  // Increased from 500 to prevent truncation
                 })
             });
 
@@ -277,6 +297,50 @@ app.post('/api/logs', (req, res) => {
 
     res.json({ success: true });
 });
+
+// Console log capture endpoint (for VLA Agent error feedback)
+const CONSOLE_LOG_FILE = path.join(LOG_DIR, 'console.jsonl');
+let recentErrors = []; // In-memory cache for agent feedback
+
+app.post('/api/logs/console', (req, res) => {
+    const { logs } = req.body;
+    if (!Array.isArray(logs)) {
+        return res.status(400).json({ error: 'logs must be an array' });
+    }
+
+    try {
+        // Write to file
+        for (const log of logs) {
+            fs.appendFileSync(CONSOLE_LOG_FILE, JSON.stringify(log) + '\n');
+
+            // Cache errors for agent feedback
+            if (log.level === 'error' || log.level === 'warn') {
+                recentErrors.push(log);
+                if (recentErrors.length > 50) recentErrors.shift();
+            }
+        }
+        res.json({ success: true, received: logs.length });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get recent errors for agent self-correction
+app.get('/api/logs/errors', (req, res) => {
+    const count = parseInt(req.query.count) || 10;
+    res.json({
+        success: true,
+        errors: recentErrors.slice(-count),
+        total: recentErrors.length
+    });
+});
+
+// Clear error cache (after agent successfully handles them)
+app.post('/api/logs/errors/clear', (req, res) => {
+    recentErrors = [];
+    res.json({ success: true });
+});
+
 
 // Log analysis endpoint for maintenance
 app.get('/api/logs/analyze', async (req, res) => {

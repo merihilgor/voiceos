@@ -48,3 +48,19 @@
     - ✅ Log rotation for `analytics.jsonl` (5 files × 1MB)
     - ✅ Self-improvement API: `/api/analytics/improvements`
     - 🔧 TODO: Fix data accuracy before using for analysis
+
+## Phase 5: Packaging & Distribution
+8. **[ ] macOS .app Bundle & .dmg Packaging**
+    - **Goal:** Distribute VoiceOS as a native macOS app.
+    - **Single Instance (native approach):**
+        - Add `LSMultipleInstancesProhibited = true` in Info.plist
+        - macOS will auto-bring existing window to front
+    - **Packaging options:**
+        - Electron: `electron-builder` with `app.requestSingleInstanceLock()`
+        - Native: Create .app bundle with shell launcher
+        - Tauri: Rust-based, lighter than Electron
+    - **Distribution:**
+        - Code signing with Apple Developer ID
+        - Notarization for Gatekeeper
+        - Create .dmg installer with background image
+

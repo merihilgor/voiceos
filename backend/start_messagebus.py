@@ -112,6 +112,75 @@ async def handle_utterance(websocket, utterance: str):
     await send_context_update(websocket)
 
 
+async def handle_agent_command(websocket, command: str):
+    """Process a command through the VLA Agent loop."""
+    try:
+        from core.agent.kernel import get_agent_kernel
+        kernel = get_agent_kernel()
+        
+        logger.info(f"[VLA Agent] Processing: {command}")
+        result = await kernel.process_command(command)
+        
+        response = {
+            "type": "agent:result",
+            "data": {
+                "success": result.success,
+                "message": result.message,
+                "needs_confirmation": result.needs_confirmation,
+                "confirmation_prompt": result.confirmation_prompt,
+                "attempts": result.attempts,
+                "verification_passed": result.verification_passed,
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        await websocket.send(json.dumps(response))
+        
+        # If confirmation is needed, also speak the prompt
+        if result.needs_confirmation and result.confirmation_prompt:
+            await websocket.send(json.dumps({
+                "type": "speak",
+                "data": {"utterance": result.confirmation_prompt},
+                "timestamp": datetime.now().isoformat()
+            }))
+        
+        logger.info(f"[VLA Agent] Result: success={result.success}, message={result.message}")
+        
+    except Exception as e:
+        logger.error(f"[VLA Agent] Error: {e}", exc_info=True)
+        await websocket.send(json.dumps({
+            "type": "agent:result",
+            "data": {"success": False, "message": f"Agent error: {str(e)}"},
+            "timestamp": datetime.now().isoformat()
+        }))
+
+
+async def handle_agent_confirmation(websocket, command: str, confirmed: bool):
+    """Handle confirmation response for VLA Agent."""
+    try:
+        from core.agent.kernel import get_agent_kernel
+        kernel = get_agent_kernel()
+        
+        logger.info(f"[VLA Agent] Confirmation: {command}, confirmed={confirmed}")
+        result = await kernel.process_with_confirmation(command, confirmed)
+        
+        await websocket.send(json.dumps({
+            "type": "agent:result",
+            "data": {
+                "success": result.success,
+                "message": result.message,
+            },
+            "timestamp": datetime.now().isoformat()
+        }))
+        
+    except Exception as e:
+        logger.error(f"[VLA Agent] Confirmation error: {e}")
+        await websocket.send(json.dumps({
+            "type": "agent:result",
+            "data": {"success": False, "message": f"Confirmation error: {str(e)}"},
+            "timestamp": datetime.now().isoformat()
+        }))
+
+
 async def handle_message(websocket, message: str):
     """Handle incoming WebSocket messages."""
     try:
@@ -149,6 +218,18 @@ async def handle_message(websocket, message: str):
                 "data": result,
                 "timestamp": datetime.now().isoformat()
             }))
+        
+        elif msg_type == 'agent:execute':
+            # VLA Agent command execution
+            command = data.get('data', {}).get('command', '')
+            if command:
+                await handle_agent_command(websocket, command)
+        
+        elif msg_type == 'agent:confirm':
+            # VLA Agent confirmation response
+            command = data.get('data', {}).get('command', '')
+            confirmed = data.get('data', {}).get('confirmed', False)
+            await handle_agent_confirmation(websocket, command, confirmed)
         
         else:
             logger.warning(f"Unknown message type: {msg_type}")

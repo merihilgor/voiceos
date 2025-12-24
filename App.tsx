@@ -6,6 +6,12 @@ import { VoiceOrb } from './components/ui/VoiceOrb';
 import { BandwidthMonitor } from './components/ui/BandwidthMonitor';
 import { useMessageBus } from './src/hooks/useMessageBus';
 import { decode, decodeAudioData, createPcmBlob } from './services/audioUtils';
+import { consoleCapture } from './services/ConsoleCapture'; // VLA Agent error feedback
+
+// Force consoleCapture to be included (prevents tree-shaking)
+if (consoleCapture) {
+  (window as any).__consoleCapture = consoleCapture;
+}
 
 // Command history type
 interface CommandHistoryItem {
@@ -420,16 +426,104 @@ export default function App() {
                   timestamp: new Date()
                 }]);
 
-                // Try backend for execution
-                try {
-                  await fetch('/api/execute', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: fc.name, params: fc.args })
-                  });
-                  result = { result: 'executed' };
-                } catch (e) {
-                  console.warn("Backend unavailable", e);
+                // Try backend for execution with self-correction retry
+                const MAX_RETRIES = 2;
+                let currentAction = fc.name;
+                let currentParams = fc.args;
+
+                for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+                  try {
+                    const response = await fetch('/api/execute', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: currentAction, params: currentParams })
+                    });
+
+                    if (!response.ok) {
+                      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                      const errorMsg = errorData.error || `HTTP ${response.status}`;
+                      console.error(`API Error (${response.status}):`, errorData);
+
+                      // Self-correction: if openApp failed, ask LLM to correct the app name
+                      if (currentAction === 'openApp' && attempt < MAX_RETRIES && errorMsg.includes('Unable to find')) {
+                        console.log(`[Self-Correction] Asking LLM to fix app name (attempt ${attempt + 1})`);
+
+                        // Ask LLM to correct the app name
+                        const correctionPrompt = `The macOS app "${currentParams.appId}" was not found.
+
+IMPORTANT: On macOS, apps often have full names like:
+- "Outlook" should be "Microsoft Outlook"
+- "Chrome" should be "Google Chrome"  
+- "VSCode" should be "Visual Studio Code"
+
+What is the correct full application name for "${currentParams.appId}"?
+
+Reply with ONLY the JSON: {"app": "Full App Name"}`;
+
+                        try {
+                          const correctionResponse = await fetch('/api/ollama/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              model: import.meta.env.VITE_OLLAMA_MODEL || 'gemini-3-flash-preview',
+                              messages: [{ role: 'user', content: correctionPrompt }],
+                              temperature: 0.1,
+                              max_tokens: 150  // Increased from 50 to prevent truncation
+                            })
+                          });
+
+                          if (correctionResponse.ok) {
+                            const correctionData = await correctionResponse.json();
+                            const content = correctionData.choices?.[0]?.message?.content || '';
+                            console.log(`[Self-Correction] LLM raw response: ${content}`);
+
+                            // Try multiple regex patterns
+                            let correctedApp = null;
+                            const patterns = [
+                              /"app"\s*:\s*"([^"]+)"/,           // {"app": "Name"}
+                              /Microsoft\s+\w+/i,                 // Microsoft Outlook
+                              /Google\s+\w+/i,                    // Google Chrome
+                              /Visual\s+Studio\s+\w+/i,           // Visual Studio Code
+                            ];
+
+                            for (const pattern of patterns) {
+                              const match = content.match(pattern);
+                              if (match) {
+                                correctedApp = match[1] || match[0];
+                                break;
+                              }
+                            }
+
+                            if (correctedApp && correctedApp !== currentParams.appId) {
+                              console.log(`[Self-Correction] ✅ LLM suggested: ${correctedApp}`);
+                              currentParams = { ...currentParams, appId: correctedApp };
+                              continue; // Retry with corrected name
+                            } else {
+                              console.log(`[Self-Correction] ❌ LLM didn't provide a new name`);
+                            }
+                          } else {
+                            console.error(`[Self-Correction] LLM request failed: ${correctionResponse.status}`);
+                          }
+                        } catch (correctionError) {
+                          console.error(`[Self-Correction] Error calling LLM:`, correctionError);
+                        }
+                      }
+
+                      result = { error: errorMsg };
+                      break;
+                    } else {
+                      const data = await response.json();
+                      result = { result: data.result || 'executed' };
+                      if (attempt > 0) {
+                        console.log(`[Self-Correction] Success after ${attempt + 1} attempts!`);
+                      }
+                      break;
+                    }
+                  } catch (e) {
+                    console.warn("Backend unavailable", e);
+                    result = { error: 'Backend unavailable' };
+                    break;
+                  }
                 }
 
                 sessionPromise.then(sess => sess.sendToolResponse({
