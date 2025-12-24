@@ -5,6 +5,7 @@
  */
 
 import { VisionService } from './VisionService';
+import { analytics } from './Analytics';
 
 // Debug mode - set VITE_DEBUG=true in .env.local for enhanced logging
 const DEBUG = import.meta.env.VITE_DEBUG === 'true';
@@ -302,11 +303,15 @@ CRITICAL: Output ONLY valid JSON, no explanation. Keep response short.`
                     }
                     // If not valid JSON, treat as text response
                     this.simulateResponse(content);
+                    // Track as text response (not necessarily error unless LLM truly failed)
+                    analytics.trackCommand(text, 'speak:fallback', true, { parsedIntent: content });
                 }
             }
         } catch (error) {
             console.error("OllamaService: API error", error);
             this.simulateResponse(`Sorry, I couldn't process "${text}". Please try again.`);
+            // Track failure
+            analytics.trackCommand(text, 'error:api_failed', false, { error: error.message });
         }
     }
 
@@ -317,6 +322,12 @@ CRITICAL: Output ONLY valid JSON, no explanation. Keep response short.`
             console.log('[DEBUG:handleParsedResponse] Parsed action:', parsed.action);
             console.log('[DEBUG:handleParsedResponse] Parsed data:', parsed);
         }
+
+        // Track success
+        analytics.trackCommand(originalText, parsed.action, true, {
+            parsedIntent: parsed.action,
+            toolCall: parsed
+        });
 
         if (parsed.action === 'open_app' && parsed.app) {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: openApp tool call');
@@ -342,6 +353,8 @@ CRITICAL: Output ONLY valid JSON, no explanation. Keep response short.`
         } else {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → No matching action, using fallback');
             this.simulateResponse(`I heard "${originalText}" but I'm not sure how to handle it.`);
+            // Track fallback as partial failure? Or just unknown action
+            analytics.trackCommand(originalText, 'unknown_action', false, { error: 'No matching action handler' });
         }
     }
 

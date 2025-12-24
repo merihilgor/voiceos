@@ -49,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Backend Python `RotatingFileHandler` (5 files × 1MB)
   - Log analysis API: `/api/logs/analyze`
   - ENV config: `VITE_LOG_LEVEL`, `LOG_LEVEL`, `LOG_DIR`
+- **Usage Analytics System**
+  - Tracks intent vs outcome for self-improvement
+  - Managed via `VITE_ANALYTICS_ENABLED`
+  - Rotated storage: `logs/analytics.jsonl`
+  - Improvement suggestions API: `/api/analytics/improvements`
 
 ---
 

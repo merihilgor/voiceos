@@ -36,3 +36,15 @@
     - ✅ Backend Python `RotatingFileHandler` (5 files × 1MB)
     - ✅ ENV config: `VITE_LOG_LEVEL`, `LOG_LEVEL`, `LOG_DIR`
     - ✅ Log analysis API: `/api/logs/analyze`
+
+7. **[~] Usage Analytics System** - *DRAFT / INCOMPLETE*
+    - **Goal:** Track intent vs outcome for self-improvement.
+    - ⚠️ **Known Issues (data not reliable):**
+        - Voice capture may record mistaken/unintended audio
+        - Action success/failure logging may not reflect real outcomes
+        - Some failed actions logged as successful and vice versa
+    - ✅ `Analytics.ts` tracks utterance → parsed intent → action → outcome
+    - ✅ Enable via `VITE_ANALYTICS_ENABLED=true`
+    - ✅ Log rotation for `analytics.jsonl` (5 files × 1MB)
+    - ✅ Self-improvement API: `/api/analytics/improvements`
+    - 🔧 TODO: Fix data accuracy before using for analysis

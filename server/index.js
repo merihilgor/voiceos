@@ -333,6 +333,142 @@ app.get('/api/logs/files', (req, res) => {
     }
 });
 
+// ====== ANALYTICS API ENDPOINTS ======
+
+const ANALYTICS_FILE = path.join(LOG_DIR, 'analytics.jsonl');
+
+const MAX_LOG_SIZE = 1024 * 1024; // 1MB
+const MAX_BACKUPS = 5;
+
+// Helper: Rotate log files (e.g. log.jsonl -> log.jsonl.1)
+function rotateLog(filePath) {
+    if (!fs.existsSync(filePath)) return;
+
+    try {
+        const stats = fs.statSync(filePath);
+        if (stats.size < MAX_LOG_SIZE) return;
+
+        console.log(`Rotating log file: ${filePath}`);
+
+        // Remove oldest backup
+        const oldestBackup = `${filePath}.${MAX_BACKUPS}`;
+        if (fs.existsSync(oldestBackup)) {
+            fs.unlinkSync(oldestBackup);
+        }
+
+        // Shift backups (5->4, ..., 1->0)
+        for (let i = MAX_BACKUPS - 1; i >= 1; i--) {
+            const current = `${filePath}.${i}`;
+            const next = `${filePath}.${i + 1}`;
+            if (fs.existsSync(current)) {
+                fs.renameSync(current, next);
+            }
+        }
+
+        // Rename current to .1
+        fs.renameSync(filePath, `${filePath}.1`);
+    } catch (e) {
+        console.error('Log rotation error:', e);
+    }
+}
+
+// Record analytics event
+app.post('/api/analytics', (req, res) => {
+    try {
+        // Rotate if needed before writing
+        rotateLog(ANALYTICS_FILE);
+
+        const event = req.body;
+        const line = JSON.stringify(event) + '\n';
+        fs.appendFileSync(ANALYTICS_FILE, line);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Analytics summary
+app.get('/api/analytics/summary', (req, res) => {
+    try {
+        if (!fs.existsSync(ANALYTICS_FILE)) {
+            return res.json({ success: true, events: 0, summary: {} });
+        }
+
+        const content = fs.readFileSync(ANALYTICS_FILE, 'utf-8');
+        const lines = content.trim().split('\n').filter(l => l);
+        const events = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+
+        const summary = {
+            totalEvents: events.length,
+            successCount: events.filter(e => e.success).length,
+            failureCount: events.filter(e => !e.success).length,
+            successRate: events.length ? (events.filter(e => e.success).length / events.length * 100).toFixed(1) + '%' : 'N/A',
+            avgExecutionTime: events.length ? Math.round(events.reduce((s, e) => s + (e.executionTimeMs || 0), 0) / events.length) + 'ms' : 'N/A',
+            topActions: Object.entries(events.reduce((acc, e) => {
+                acc[e.parsedAction] = (acc[e.parsedAction] || 0) + 1;
+                return acc;
+            }, {})).sort((a, b) => b[1] - a[1]).slice(0, 5),
+            recentFailures: events.filter(e => !e.success).slice(-10).map(e => ({
+                utterance: e.utterance,
+                action: e.parsedAction,
+                error: e.error
+            }))
+        };
+
+        res.json({ success: true, summary });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Self-improvement suggestions
+app.get('/api/analytics/improvements', async (req, res) => {
+    try {
+        if (!fs.existsSync(ANALYTICS_FILE)) {
+            return res.json({ success: true, suggestions: ['No data yet - use the app to collect analytics'] });
+        }
+
+        const content = fs.readFileSync(ANALYTICS_FILE, 'utf-8');
+        const lines = content.trim().split('\n').filter(l => l);
+        const events = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+
+        const failures = events.filter(e => !e.success);
+        const failurePatterns = {};
+
+        failures.forEach(f => {
+            const key = `${f.parsedAction}:${f.error || 'unknown'}`;
+            if (!failurePatterns[key]) {
+                failurePatterns[key] = { count: 0, examples: [] };
+            }
+            failurePatterns[key].count++;
+            if (failurePatterns[key].examples.length < 3) {
+                failurePatterns[key].examples.push(f.utterance);
+            }
+        });
+
+        const suggestions = Object.entries(failurePatterns)
+            .sort((a, b) => b[1].count - a[1].count)
+            .slice(0, 5)
+            .map(([pattern, data]) => ({
+                pattern,
+                count: data.count,
+                examples: data.examples,
+                suggestion: `Fix "${pattern.split(':')[0]}" action - fails ${data.count} times`
+            }));
+
+        res.json({
+            success: true,
+            totalFailures: failures.length,
+            suggestions,
+            llmPrompt: failures.length > 0
+                ? `Analyze these VoiceOS failures and suggest improvements:\n${JSON.stringify(suggestions, null, 2)}`
+                : 'No failures to analyze - system is working well!'
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Backend server running on http://localhost:${PORT}`);
 });
