@@ -15,13 +15,13 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Try to import Google Generative AI
+# Try to import Google GenAI SDK (new unified SDK)
 try:
-    import google.generativeai as genai
+    from google import genai
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
-    logger.warning("google-generativeai not available")
+    logger.warning("google-genai not available")
 
 # Try to import OpenAI (for Ollama compatibility)
 try:
@@ -120,15 +120,16 @@ class IntentParser:
             self._init_gemini(api_key)
     
     def _init_gemini(self, api_key: Optional[str] = None):
-        """Initialize Gemini provider."""
+        """Initialize Gemini provider using new google-genai SDK."""
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         self.model_name = self.model_name or DEFAULT_GEMINI_MODEL
         
         if GENAI_AVAILABLE and self.api_key:
             try:
-                genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel(self.model_name)
-                logger.info(f"Gemini model initialized: {self.model_name}")
+                # New SDK uses Client object
+                self.client = genai.Client(api_key=self.api_key)
+                self.model = self.model_name  # Store model name for later use
+                logger.info(f"Gemini client initialized with model: {self.model_name}")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini: {e}")
     
@@ -214,8 +215,11 @@ class IntentParser:
             return self._parse_fallback(utterance, app_name, app_type)
     
     async def _parse_with_gemini(self, prompt: str) -> str:
-        """Generate response using Gemini."""
-        response = self.model.generate_content(prompt)
+        """Generate response using Gemini (new google-genai SDK)."""
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt
+        )
         return response.text.strip()
     
     async def _parse_with_ollama(self, prompt: str) -> str:

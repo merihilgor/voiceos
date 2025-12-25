@@ -7,22 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (WIP - Not Complete)
-- **GDPR/PCI-DSS Text Masking** ⚠️ *Work in Progress*
-  - Email, credit cards, CVV, expiry dates, phone numbers, IPs
-  - SSN, IBAN, Turkish ID, passport numbers, dates of birth
-  - URLs with embedded credentials
-- **Visual Screenshot Masking** ⚠️ *Work in Progress*
-  - Menubar (4%), right menubar (50%+), dock (8%) regions
-  - Face detection with face-api.js
-- **Server-side Screenshot Masking** ⚠️ *Work in Progress*
-  - Dark gray overlays on menubar and dock in saved debug screenshots
-  - No external dependencies (uses existing Pillow)
+### Added
+- **OCR Text Targeting** (Phase 1 - Enhanced Backend)
+  - macOS Vision framework OCR for text detection
+  - New endpoints: `/api/click-text`, `/api/find-text`, `/api/type-at-text`, `/api/ocr-debug`
+  - Menu bar focused search with 2x upscaling for small text
+  - `server/ocr-service.js` - Vision OCR service
 
-### Changed (WIP)
-- `MaskingService.ts` - Expanded PII patterns for GDPR/PCI-DSS compliance
-- `VisualMaskingService.ts` - Increased blur radius (20px) and region coverage
-- `server/index.js` - Replaced ImageMagick with PIL for screenshot masking
+### Changed
+- **google-genai Migration** - Replaced deprecated `google-generativeai` with `google-genai`
+  - Updated `backend/intent_parser.py` to use new Client API
+  - Updated `backend/requirements.txt` with `google-genai>=1.0.0`
+
+### WIP (Work in Progress) ⚠️
+- **OCR Menu Bar Detection** - Small text like "File", "Edit" not reliably detected
+- **GDPR/PCI-DSS Text Masking** - Not fully tested
+- **Visual Screenshot Masking** - Face detection incomplete
+- **Server-side Screenshot Masking** - Menubar/dock overlays
 
 ---
 

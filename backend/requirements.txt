@@ -2,7 +2,8 @@ websockets>=12.0
 pyobjc-framework-Cocoa>=10.0
 pyobjc-framework-Quartz>=10.0
 pyobjc-framework-ApplicationServices>=10.0
-google-generativeai>=0.8.0
+pyobjc-framework-Vision>=10.0
+google-genai>=1.0.0
 openai>=1.0.0
 openwakeword>=0.5.0
 pyaudio>=0.2.14
@@ -10,3 +11,7 @@ numpy>=1.24.0
 pyautogui>=0.9.54
 Pillow>=10.0.0
 flask>=3.0.0
+pytesseract>=0.3.10
+
+# System dependencies (install via brew):
+# - tesseract: brew install tesseract

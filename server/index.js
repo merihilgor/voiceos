@@ -7,6 +7,7 @@ import { exec } from 'child_process';
 import util from 'util';
 import { fileURLToPath } from 'url';
 import { executeJXA, openApp, closeApp, setVolume, sendShortcut, typeKeystrokes, openPath, clickAt } from './macos.js';
+import { clickOnText, findTextOnScreen, typeText as ocrTypeText } from './ocr-service.js';
 
 // Load .env.local for server-side environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -307,6 +308,81 @@ app.post('/api/click', async (req, res) => {
         res.json({ success: true, result });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+// ====== OCR-BASED TEXT TARGETING (Phase 1) ======
+
+// Click on visible text (fast, no VLM needed)
+app.post('/api/click-text', async (req, res) => {
+    const { query, button = 'left', doubleClick = false } = req.body;
+    const traceId = getTraceId(req);
+    console.log(`[TRACE:${traceId}] OCR click-text: "${query}"`);
+
+    try {
+        const result = await clickOnText(query, { button, doubleClick });
+        if (result.success) {
+            console.log(`[TRACE:${traceId}] OCR click success at (${result.coordinates?.x}, ${result.coordinates?.y})`);
+            res.json(result);
+        } else {
+            console.log(`[TRACE:${traceId}] OCR click failed: ${result.error}`);
+            res.status(404).json(result);
+        }
+    } catch (error) {
+        console.error(`[TRACE:${traceId}] OCR click error:`, error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Find text on screen (returns coordinates without clicking)
+app.post('/api/find-text', async (req, res) => {
+    const { query } = req.body;
+    const traceId = getTraceId(req);
+    console.log(`[TRACE:${traceId}] OCR find-text: "${query}"`);
+
+    try {
+        const regions = await findTextOnScreen(query);
+        console.log(`[TRACE:${traceId}] OCR found ${regions.length} matches for "${query}"`);
+        res.json({ success: true, query, matches: regions, count: regions.length });
+    } catch (error) {
+        console.error(`[TRACE:${traceId}] OCR find error:`, error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Type at text label (click label then type)
+app.post('/api/type-at-text', async (req, res) => {
+    const { label, text } = req.body;
+    const traceId = getTraceId(req);
+    console.log(`[TRACE:${traceId}] OCR type-at-text: label="${label}", text="${text?.substring(0, 20)}..."`);
+
+    try {
+        const result = await ocrTypeText(text, label);
+        if (result.success) {
+            console.log(`[TRACE:${traceId}] OCR type success`);
+            res.json(result);
+        } else {
+            console.log(`[TRACE:${traceId}] OCR type failed: ${result.error}`);
+            res.status(404).json(result);
+        }
+    } catch (error) {
+        console.error(`[TRACE:${traceId}] OCR type error:`, error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Debug: List all text detected on screen (for OCR testing)
+app.get('/api/ocr-debug', async (req, res) => {
+    const traceId = getTraceId(req);
+    console.log(`[TRACE:${traceId}] OCR debug: listing all screen text`);
+
+    try {
+        // Get all text without filtering
+        const regions = await findTextOnScreen('');
+        res.json({ success: true, count: regions.length, texts: regions });
+    } catch (error) {
+        console.error(`[TRACE:${traceId}] OCR debug error:`, error.message);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
