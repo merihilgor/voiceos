@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (WIP - Not Complete)
+- **GDPR/PCI-DSS Text Masking** ⚠️ *Work in Progress*
+  - Email, credit cards, CVV, expiry dates, phone numbers, IPs
+  - SSN, IBAN, Turkish ID, passport numbers, dates of birth
+  - URLs with embedded credentials
+- **Visual Screenshot Masking** ⚠️ *Work in Progress*
+  - Menubar (4%), right menubar (50%+), dock (8%) regions
+  - Face detection with face-api.js
+- **Server-side Screenshot Masking** ⚠️ *Work in Progress*
+  - Dark gray overlays on menubar and dock in saved debug screenshots
+  - No external dependencies (uses existing Pillow)
+
+### Changed (WIP)
+- `MaskingService.ts` - Expanded PII patterns for GDPR/PCI-DSS compliance
+- `VisualMaskingService.ts` - Increased blur radius (20px) and region coverage
+- `server/index.js` - Replaced ImageMagick with PIL for screenshot masking
+
 ---
 
 ## [0.3.0] - 2025-12-23 (Wake Word Customization)

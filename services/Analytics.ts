@@ -18,6 +18,7 @@
 
 export interface UsageEvent {
     id: string;
+    traceId?: string; // Distributed trace ID
     timestamp: string;
     sessionId: string;
     // Input
@@ -28,6 +29,7 @@ export interface UsageEvent {
     parsedIntent: string;
     parsedAction: string;
     toolCall: Record<string, any> | null;
+    rawContent?: string; // Raw LLM response for debugging
     // Outcome
     success: boolean;
     error?: string;
@@ -39,6 +41,7 @@ interface PartialEvent {
     utterance: string;
     speechLang?: string;
     wakeWord?: string;
+    traceId?: string;
 }
 
 class AnalyticsService {
@@ -62,7 +65,7 @@ class AnalyticsService {
     /**
      * Start tracking a command
      */
-    startCommand(utterance: string, speechLang?: string, wakeWord?: string): string {
+    startCommand(utterance: string, speechLang?: string, wakeWord?: string, traceId?: string): string {
         if (!this.enabled) return '';
 
         const eventId = this.generateId();
@@ -71,6 +74,7 @@ class AnalyticsService {
             utterance,
             speechLang,
             wakeWord,
+            traceId,
         });
         return eventId;
     }
@@ -84,7 +88,8 @@ class AnalyticsService {
         parsedAction: string,
         toolCall: Record<string, any> | null,
         success: boolean,
-        error?: string
+        error?: string,
+        rawContent?: string
     ): Promise<void> {
         if (!this.enabled || !eventId) return;
 
@@ -95,6 +100,7 @@ class AnalyticsService {
 
         const event: UsageEvent = {
             id: eventId,
+            traceId: pending.traceId,
             timestamp: new Date().toISOString(),
             sessionId: this.sessionId,
             utterance: pending.utterance,
@@ -103,6 +109,7 @@ class AnalyticsService {
             parsedIntent,
             parsedAction,
             toolCall,
+            rawContent,
             success,
             error,
             executionTimeMs: Date.now() - pending.startTime,
@@ -134,12 +141,15 @@ class AnalyticsService {
             toolCall?: Record<string, any>;
             error?: string;
             executionTimeMs?: number;
+            traceId?: string;
+            rawContent?: string;
         } = {}
     ): Promise<void> {
         if (!this.enabled) return;
 
         const event: UsageEvent = {
             id: this.generateId(),
+            traceId: options.traceId,
             timestamp: new Date().toISOString(),
             sessionId: this.sessionId,
             utterance,
@@ -148,6 +158,7 @@ class AnalyticsService {
             parsedIntent: options.parsedIntent || '',
             parsedAction,
             toolCall: options.toolCall || null,
+            rawContent: options.rawContent,
             success,
             error: options.error,
             executionTimeMs: options.executionTimeMs || 0,

@@ -1,7 +1,12 @@
 /**
  * VisionService - Handles vision-based desktop control.
- * Captures screenshots and uses vision LLM to identify UI elements.
+ * Captures screenshots and uses vision LLM to interpret voice commands
+ * that require visual context (e.g., "click on the downloads folder").
+ * 
+ * Note: Visual masking is applied client-side before sending to LLM for privacy.
  */
+
+import { visualMaskingService, VisualMaskingService } from './VisualMaskingService';
 
 // Debug mode - set VITE_DEBUG=true in .env.local for enhanced logging
 const DEBUG = import.meta.env.VITE_DEBUG === 'true';
@@ -12,14 +17,15 @@ interface VisionConfig {
     model?: string;
 }
 
-interface VisionAction {
-    action: 'click' | 'double_click' | 'scroll' | 'type' | 'speak' | 'open_path';
+export interface VisionAction {
+    action: 'click' | 'double_click' | 'scroll' | 'type' | 'speak';
     x?: number;
     y?: number;
+    direction?: 'up' | 'down' | 'left' | 'right';
+    amount?: number;
     text?: string;
-    path?: string;
-    confidence?: number;
     element_description?: string;
+    confidence?: number;
 }
 
 export class VisionService {
@@ -29,8 +35,8 @@ export class VisionService {
 
     constructor(config: VisionConfig) {
         this.apiKey = config.apiKey;
-        this.baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com';
-        this.model = config.model || 'gemini-2.0-flash';
+        this.baseUrl = config.baseUrl || 'https://ollama.com/v1';
+        this.model = config.model || 'gemini-3-flash-preview';
 
         if (DEBUG) {
             console.log('[DEBUG:VisionService] Initialized with:', {
@@ -42,21 +48,22 @@ export class VisionService {
 
     /**
      * Process a voice command with screen context.
-     * Captures screenshot, sends to vision LLM, returns structured action.
+     * Captures screenshot, masks it client-side, sends to vision LLM.
      */
-    async processWithVision(command: string): Promise<VisionAction | null> {
+    async processWithVision(command: string, traceId?: string): Promise<VisionAction | null> {
         if (DEBUG) {
             console.log('[DEBUG:VisionService] ========================================');
             console.log('[DEBUG:VisionService] PROCESSING COMMAND:', command);
+            console.log('[DEBUG:VisionService] TraceID:', traceId);
             console.log('[DEBUG:VisionService] ========================================');
         }
 
-        console.log(`VisionService: Processing "${command}" with vision...`);
+        console.log(`VisionService: Processing "${command}" with vision... [TraceID: ${traceId}]`);
 
         try {
-            // 1. Capture screenshot
+            // 1. Capture screenshot from server
             if (DEBUG) console.log('[DEBUG:VisionService] Step 1: Capturing screenshot...');
-            const screenshot = await this.captureScreen();
+            const screenshot = await this.captureScreen(traceId);
             if (!screenshot) {
                 console.error('VisionService: Failed to capture screenshot');
                 if (DEBUG) console.log('[DEBUG:VisionService] Screenshot capture FAILED');
@@ -64,9 +71,22 @@ export class VisionService {
             }
             if (DEBUG) console.log('[DEBUG:VisionService] Screenshot captured, length:', screenshot.length);
 
-            // 2. Send to vision LLM
-            if (DEBUG) console.log('[DEBUG:VisionService] Step 2: Sending to vision LLM...');
-            const action = await this.analyzeWithVisionLLM(screenshot, command);
+            // 2. Apply client-side visual masking before sending to LLM (always-on)
+            let maskedScreenshot = screenshot;
+            if (VisualMaskingService.isSupported()) {
+                if (DEBUG) console.log('[DEBUG:VisionService] Step 2: Applying client-side visual masking...');
+                try {
+                    const maskResult = await visualMaskingService.maskScreenshot(screenshot);
+                    maskedScreenshot = maskResult.maskedBase64;
+                    console.log(`[TRACE:${traceId}] Visual masking applied: ${maskResult.regionsBlurred.join(', ')} (${maskResult.processingTimeMs.toFixed(0)}ms)`);
+                } catch (maskError) {
+                    console.warn('[VisionService] Visual masking failed, using original screenshot:', maskError);
+                }
+            }
+
+            // 3. Send MASKED screenshot to vision LLM
+            if (DEBUG) console.log('[DEBUG:VisionService] Step 3: Sending masked screenshot to vision LLM...');
+            const action = await this.analyzeWithVisionLLM(maskedScreenshot, command, traceId);
 
             if (DEBUG) {
                 console.log('[DEBUG:VisionService] Vision LLM returned action:', JSON.stringify(action, null, 2));
@@ -84,9 +104,10 @@ export class VisionService {
     /**
      * Capture the current screen.
      */
-    private async captureScreen(): Promise<string | null> {
+    private async captureScreen(traceId?: string): Promise<string | null> {
         try {
-            const response = await fetch('/api/screenshot');
+            const url = traceId ? `/api/screenshot?traceId=${traceId}` : '/api/screenshot';
+            const response = await fetch(url);
             if (!response.ok) {
                 throw new Error(`Screenshot API error: ${response.status}`);
             }
@@ -101,7 +122,7 @@ export class VisionService {
     /**
      * Analyze screenshot with vision LLM.
      */
-    private async analyzeWithVisionLLM(imageBase64: string, command: string): Promise<VisionAction | null> {
+    private async analyzeWithVisionLLM(imageBase64: string, command: string, traceId?: string): Promise<VisionAction | null> {
         const prompt = `You are a desktop automation assistant. Analyze the screenshot and the user's voice command to determine the appropriate action.
 
 Given the screenshot and command, respond with a JSON object describing the action:
@@ -144,11 +165,15 @@ Respond with ONLY valid JSON, no explanation.`;
             console.log('VisionService: Calling /api/vision...');
             const response = await fetch('/api/vision', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(traceId ? { 'X-Trace-ID': traceId } : {})
+                },
                 body: JSON.stringify({
                     imageBase64,
                     prompt,
-                    model: this.model
+                    model: this.model,
+                    traceId
                 })
             });
 
@@ -215,21 +240,46 @@ Respond with ONLY valid JSON, no explanation.`;
     /**
      * Execute a vision action.
      */
-    async executeAction(action: VisionAction): Promise<boolean> {
+    async executeAction(action: VisionAction, traceId?: string): Promise<boolean> {
         console.log('VisionService: Executing', action);
 
         try {
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+            };
+            if (traceId) {
+                headers['X-Trace-ID'] = traceId;
+            }
+
             switch (action.action) {
                 case 'click':
                 case 'double_click':
                     if (action.x !== undefined && action.y !== undefined) {
                         const response = await fetch('/api/click', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers,
                             body: JSON.stringify({
                                 x: action.x,
                                 y: action.y,
-                                doubleClick: action.action === 'double_click'
+                                doubleClick: action.action === 'double_click',
+                                traceId
+                            })
+                        });
+                        return response.ok;
+                    }
+                    break;
+
+                case 'scroll':
+                    if (action.direction) {
+                        const response = await fetch('/api/execute', {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({
+                                action: 'scroll',
+                                params: {
+                                    direction: action.direction,
+                                    amount: action.amount || 3
+                                }
                             })
                         });
                         return response.ok;
@@ -240,48 +290,26 @@ Respond with ONLY valid JSON, no explanation.`;
                     if (action.text) {
                         const response = await fetch('/api/execute', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ action: 'keystrokes', params: { keys: action.text } })
-                        });
-                        return response.ok;
-                    }
-                    break;
-
-                case 'open_path':
-                    if (action.path) {
-                        const response = await fetch('/api/execute', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ action: 'open_path', params: { path: action.path } })
+                            headers,
+                            body: JSON.stringify({
+                                action: 'keystrokes',
+                                params: { keys: action.text }
+                            })
                         });
                         return response.ok;
                     }
                     break;
 
                 case 'speak':
-                    // Handle via TTS
-                    if (action.text && 'speechSynthesis' in window) {
-                        const utterance = new SpeechSynthesisUtterance(action.text);
-                        speechSynthesis.speak(utterance);
-                    }
+                    // Text-to-speech is handled by the caller
+                    console.log('VisionService: Speak action:', action.text);
                     return true;
             }
 
             return false;
-
         } catch (error) {
             console.error('VisionService: Execute error', error);
             return false;
         }
     }
-}
-
-// Singleton instance
-let _visionService: VisionService | null = null;
-
-export function getVisionService(config?: VisionConfig): VisionService {
-    if (!_visionService && config) {
-        _visionService = new VisionService(config);
-    }
-    return _visionService!;
 }

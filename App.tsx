@@ -55,9 +55,24 @@ export default function App() {
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const listeningTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Wake word timeout
+  const aiServiceRef = useRef<OllamaService | null>(null); // For analytics context updates
 
   // Debug mode
   const DEBUG = import.meta.env.VITE_DEBUG === 'true';
+
+  // Sync speechLang changes to OllamaService for analytics
+  useEffect(() => {
+    if (aiServiceRef.current) {
+      aiServiceRef.current.setSpeechLang(speechLang);
+    }
+  }, [speechLang]);
+
+  // Sync wakeWord changes to OllamaService for analytics
+  useEffect(() => {
+    if (aiServiceRef.current) {
+      aiServiceRef.current.setWakeWord(wakeWord);
+    }
+  }, [wakeWord]);
 
   // --- OVOS MessageBus Integration ---
   const handleOvosIntent = useCallback((intent: string, data: Record<string, any>) => {
@@ -329,11 +344,16 @@ export default function App() {
         ai = new MockGeminiService({ apiKey: "mock" });
         console.log("Using Mock Gemini Service");
       } else if (useOllama) {
-        ai = new OllamaService({
+        const ollamaService = new OllamaService({
           apiKey: ollamaApiKey!,
           baseUrl: ollamaBaseUrl,
           model: llmModel || 'gemma3:4b'
         });
+        // Initialize analytics context with current values
+        ollamaService.setSpeechLang(speechLang);
+        ollamaService.setWakeWord(wakeWord);
+        aiServiceRef.current = ollamaService;
+        ai = ollamaService;
         console.log("Using Ollama Service");
       } else {
         ai = new GoogleGenAI({ apiKey: geminiApiKey! });

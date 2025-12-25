@@ -5,7 +5,26 @@ import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import util from 'util';
+import { fileURLToPath } from 'url';
 import { executeJXA, openApp, closeApp, setVolume, sendShortcut, typeKeystrokes, openPath, clickAt } from './macos.js';
+
+// Load .env.local for server-side environment variables
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envPath = path.join(__dirname, '..', '.env.local');
+if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    envContent.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+            const [key, ...valueParts] = trimmed.split('=');
+            if (key && valueParts.length > 0) {
+                process.env[key.trim()] = valueParts.join('=').trim();
+            }
+        }
+    });
+    console.log('[Server] Loaded .env.local, VITE_DEBUG=' + process.env.VITE_DEBUG);
+}
 
 const execPromise = util.promisify(exec);
 
@@ -28,10 +47,16 @@ app.get('/api/status', (req, res) => {
     res.json({ status: 'running', os: 'macOS' });
 });
 
+// Helper to get traceId from request
+const getTraceId = (req) => {
+    return req.headers['x-trace-id'] || req.body?.traceId || req.query?.traceId || 'no-trace';
+};
+
 // Execute Generic Command
 app.post('/api/execute', async (req, res) => {
     const { action, params } = req.body;
-    console.log(`Command received: ${action}`, params);
+    const traceId = getTraceId(req);
+    console.log(`[TRACE:${traceId}] Command received: ${action}`, params);
 
     try {
         let result = '';
@@ -81,18 +106,21 @@ app.post('/api/execute', async (req, res) => {
             default:
                 return res.status(400).json({ error: 'Unknown action' });
         }
+        console.log(`[TRACE:${traceId}] Result:`, result);
         res.json({ success: true, result });
     } catch (error) {
+        console.error(`[TRACE:${traceId}] Error:`, error.message);
         res.status(500).json({ error: error.message });
     }
 });
 
 // Ollama API Proxy - Bypass CORS for browser requests
 app.post('/api/ollama/chat', async (req, res) => {
+    const traceId = getTraceId(req);
     const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'https://ollama.com/v1';
     const ollamaApiKey = process.env.OLLAMA_API_KEY || 'ollama';
 
-    console.log(`Ollama proxy: ${ollamaBaseUrl}/chat/completions`);
+    console.log(`[TRACE:${traceId}] Ollama proxy: ${ollamaBaseUrl}/chat/completions`);
 
     try {
         const response = await fetch(`${ollamaBaseUrl}/chat/completions`, {
@@ -106,14 +134,14 @@ app.post('/api/ollama/chat', async (req, res) => {
 
         if (!response.ok) {
             const error = await response.text();
-            console.error('Ollama API error:', response.status, error);
+            console.error(`[TRACE:${traceId}] Ollama API error:`, response.status, error);
             return res.status(response.status).json({ error: error });
         }
 
         const data = await response.json();
         res.json(data);
     } catch (error) {
-        console.error('Ollama proxy error:', error.message);
+        console.error(`[TRACE:${traceId}] Ollama proxy error:`, error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -143,6 +171,7 @@ app.get('/api/ollama/models', async (req, res) => {
 
 // Screenshot endpoint for vision-based commands
 app.get('/api/screenshot', async (req, res) => {
+    const traceId = getTraceId(req);
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
@@ -150,26 +179,119 @@ app.get('/api/screenshot', async (req, res) => {
     const path = await import('path');
     const os = await import('os');
 
+    console.log(`[TRACE:${traceId}] Screenshot requested, VITE_DEBUG=${process.env.VITE_DEBUG}`);
+
     try {
-        const tmpFile = path.join(os.tmpdir(), `screenshot_${Date.now()}.png`);
+        const timestamp = Date.now();
+        const tmpFile = path.join(os.tmpdir(), `screenshot_${timestamp}.png`);
+        const maskedFile = path.join(os.tmpdir(), `screenshot_${timestamp}_masked.png`);
 
         // Capture screenshot using macOS screencapture
         await execAsync(`screencapture -x ${tmpFile}`);
 
-        // Read and convert to base64
-        const imageData = fs.readFileSync(tmpFile);
+        // Get image dimensions
+        const { stdout: sizeInfo } = await execAsync(`sips -g pixelWidth -g pixelHeight "${tmpFile}"`);
+        const widthMatch = sizeInfo.match(/pixelWidth:\s*(\d+)/);
+        const heightMatch = sizeInfo.match(/pixelHeight:\s*(\d+)/);
+        const imgWidth = widthMatch ? parseInt(widthMatch[1]) : 1920;
+        const imgHeight = heightMatch ? parseInt(heightMatch[1]) : 1080;
+
+        // Always mask sensitive regions (menubar ~4%, dock ~8%, right menubar area)
+        const menubarHeight = Math.ceil(imgHeight * 0.04);
+        const dockHeight = Math.ceil(imgHeight * 0.08);
+        const dockY = imgHeight - dockHeight;
+        // Right side of menubar where most PII appears (clock, battery, WiFi name, etc.)
+        const menubarRightX = Math.ceil(imgWidth * 0.5);
+
+        // Use Python with PIL (already installed in backend) to add solid overlays
+        // Write script to temp file to avoid shell escaping issues
+        try {
+            // First, copy original to masked file
+            fs.copyFileSync(tmpFile, maskedFile);
+
+            // Create Python script in temp file
+            const scriptPath = path.join(os.tmpdir(), `mask_script_${timestamp}.py`);
+            const pythonScript = `
+import sys
+from PIL import Image, ImageDraw
+try:
+    img = Image.open('${maskedFile}')
+    draw = ImageDraw.Draw(img)
+    
+    # Mask top menubar with dark gray
+    draw.rectangle([0, 0, ${imgWidth}, ${menubarHeight}], fill=(40, 40, 40))
+    
+    # Emphasize right side of menubar (where time, battery, WiFi name appear)
+    draw.rectangle([${menubarRightX}, 0, ${imgWidth}, ${menubarHeight + 5}], fill=(30, 30, 30))
+    
+    # Mask bottom dock
+    draw.rectangle([0, ${dockY}, ${imgWidth}, ${imgHeight}], fill=(40, 40, 40))
+    
+    img.save('${maskedFile}')
+    print('OK')
+except Exception as e:
+    print(f'ERROR: {e}')
+    sys.exit(1)
+`;
+            fs.writeFileSync(scriptPath, pythonScript);
+
+            const { stdout, stderr } = await execAsync(`python3 "${scriptPath}"`);
+
+            // Clean up script file
+            fs.unlinkSync(scriptPath);
+
+            if (stdout.includes('OK')) {
+                console.log(`[TRACE:${traceId}] Applied solid masking to screenshot (menubar, dock)`);
+            } else {
+                throw new Error(stderr || stdout);
+            }
+        } catch (maskError) {
+            console.log(`[TRACE:${traceId}] PIL masking failed: ${maskError.message}`);
+            // Screenshot already copied as fallback
+            console.log(`[TRACE:${traceId}] Fallback: screenshot copied without PIL masking`);
+        }
+
+        // Read masked image and convert to base64
+        const imageData = fs.readFileSync(fs.existsSync(maskedFile) ? maskedFile : tmpFile);
         const base64 = imageData.toString('base64');
 
-        // Clean up
+        // Debug: Save masked screenshot to logs
+        if (process.env.VITE_DEBUG === 'true') {
+            const debugDir = path.join(LOG_DIR, 'screenshots');
+            if (!fs.existsSync(debugDir)) {
+                fs.mkdirSync(debugDir, { recursive: true });
+            }
+            // Use traceId in filename if available
+            const filename = traceId !== 'no-trace'
+                ? `${traceId}_${timestamp}_taken_masked.png`
+                : `taken_${timestamp}_masked.png`;
+
+            const debugFile = path.join(debugDir, filename);
+
+            // Copy masked file and resize for debug log
+            fs.copyFileSync(fs.existsSync(maskedFile) ? maskedFile : tmpFile, debugFile);
+
+            // Resize for storage optimization
+            try {
+                await execAsync(`sips --resampleWidth 800 "${debugFile}"`);
+                console.log(`[TRACE:${traceId}] Saved masked screenshot to ${debugFile}`);
+            } catch (e) {
+                console.log(`[TRACE:${traceId}] Saved screenshot to ${debugFile} (resize failed)`);
+            }
+        }
+
+        // Clean up tmp files
         fs.unlinkSync(tmpFile);
+        if (fs.existsSync(maskedFile)) fs.unlinkSync(maskedFile);
 
         res.json({
             success: true,
             image: base64,
-            mimeType: 'image/png'
+            mimeType: 'image/png',
+            masked: true
         });
     } catch (error) {
-        console.error('Screenshot error:', error);
+        console.error(`[TRACE:${traceId}] Screenshot error:`, error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -177,7 +299,8 @@ app.get('/api/screenshot', async (req, res) => {
 // Click action endpoint
 app.post('/api/click', async (req, res) => {
     const { x, y, button = 'left' } = req.body;
-    console.log(`Click received: (${x}, ${y}) button=${button}`);
+    const traceId = getTraceId(req);
+    console.log(`[TRACE:${traceId}] Click received: (${x}, ${y}) button=${button}`);
 
     try {
         const result = await clickAt(x, y, button);
@@ -189,10 +312,38 @@ app.post('/api/click', async (req, res) => {
 
 // Vision API endpoint for screenshot analysis (supports Ollama and Gemini)
 app.post('/api/vision', async (req, res) => {
+    const traceId = getTraceId(req);
     const llmProvider = process.env.LLM_PROVIDER || 'gemini';
     const { imageBase64, prompt, model = 'gemini-3-flash-preview' } = req.body;
 
-    console.log(`Vision API: Processing with ${llmProvider}/${model}`);
+    console.log(`[TRACE:${traceId}] Vision API: Processing with ${llmProvider}/${model}`);
+
+    // Debug: Save sent screenshot to logs
+    if (process.env.VITE_DEBUG === 'true' && imageBase64) {
+        try {
+            const timestamp = Date.now();
+            const debugDir = path.join(LOG_DIR, 'screenshots');
+            if (!fs.existsSync(debugDir)) {
+                fs.mkdirSync(debugDir, { recursive: true });
+            }
+            const buffer = Buffer.from(imageBase64, 'base64');
+
+            const filename = traceId !== 'no-trace'
+                ? `${traceId}_${timestamp}_vision_input.png`
+                : `vision_input_${timestamp}.png`;
+
+            const debugFile = path.join(debugDir, filename);
+            fs.writeFileSync(debugFile, buffer);
+
+            // Try to resize (async, don't block response too much)
+            exec(`sips --resampleWidth 800 "${debugFile}"`, (err) => {
+                if (!err) console.log(`[TRACE:${traceId}] Saved and resized vision input to ${debugFile}`);
+            });
+
+        } catch (err) {
+            console.error(`[TRACE:${traceId}] Failed to save debug screenshot:`, err);
+        }
+    }
 
     try {
         let text = '';
@@ -227,7 +378,7 @@ app.post('/api/vision', async (req, res) => {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error('Ollama Vision error:', response.status, errorText);
+                console.error(`[TRACE:${traceId}] Ollama Vision error:`, response.status, errorText);
                 throw new Error(`Ollama Vision API error: ${response.status}`);
             }
 
@@ -268,7 +419,7 @@ app.post('/api/vision', async (req, res) => {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error('Gemini Vision error:', response.status, errorText);
+                console.error(`[TRACE:${traceId}] Gemini Vision error:`, response.status, errorText);
                 throw new Error(`Gemini Vision API error: ${response.status}`);
             }
 
@@ -276,11 +427,11 @@ app.post('/api/vision', async (req, res) => {
             text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         }
 
-        console.log('Vision API response:', text.substring(0, 200));
+        console.log(`[TRACE:${traceId}] Vision API response:`, text.substring(0, 200));
         res.json({ success: true, text });
 
     } catch (error) {
-        console.error('Vision API error:', error);
+        console.error(`[TRACE:${traceId}] Vision API error:`, error);
         res.status(500).json({ error: error.message });
     }
 });

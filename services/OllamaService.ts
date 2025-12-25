@@ -6,6 +6,7 @@
 
 import { VisionService } from './VisionService';
 import { analytics } from './Analytics';
+import { maskingService } from './MaskingService';
 
 // Debug mode - set VITE_DEBUG=true in .env.local for enhanced logging
 const DEBUG = import.meta.env.VITE_DEBUG === 'true';
@@ -36,12 +37,22 @@ export class OllamaService {
     private visionService: VisionService | null = null;
     private enableVision: boolean;
 
+    // Analytics context - updated by App.tsx when values change
+    private speechLang: string = 'en-US';
+    private wakeWord: string = 'ayo';
+
     // Keywords that trigger vision mode (context-aware screen actions)
+    // Supports English and Turkish
     private static VISION_KEYWORDS = [
+        // English
         'click on', 'click the', 'click ', 'select the', 'select ',
         'go to ', 'open the ', 'navigate to', 'scroll',
         'double click', 'right click', 'find the', 'where is',
-        'folder', 'file', 'button', 'icon', 'menu'
+        'folder', 'file', 'button', 'icon', 'menu',
+        // Turkish
+        'tıkla', 'tikla', 'bas', 'seç', 'aç ',
+        'git ', 'kaydır', 'kaydir', 'bul', 'nerede',
+        'klasör', 'dosya', 'buton', 'düğme', 'simge', 'menü'
     ];
 
     constructor(config: OllamaConfig) {
@@ -71,24 +82,85 @@ export class OllamaService {
     }
 
     /**
-     * Check if command needs vision processing.
+     * Update speech language for analytics context.
      */
-    private needsVision(command: string): boolean {
-        const lowerCommand = command.toLowerCase();
-        const matchedKeywords = OllamaService.VISION_KEYWORDS.filter(kw => lowerCommand.includes(kw));
-        const needsVision = matchedKeywords.length > 0;
+    setSpeechLang(lang: string) {
+        this.speechLang = lang;
+        debugLog('OllamaService', `speechLang updated to: ${lang}`);
+    }
 
-        if (DEBUG) {
-            console.log('[DEBUG:needsVision] ----------------------------------------');
-            console.log('[DEBUG:needsVision] Input command:', command);
-            console.log('[DEBUG:needsVision] Lowercased:', lowerCommand);
-            console.log('[DEBUG:needsVision] Checking against keywords:', OllamaService.VISION_KEYWORDS);
-            console.log('[DEBUG:needsVision] Matched keywords:', matchedKeywords.length > 0 ? matchedKeywords : 'NONE');
-            console.log('[DEBUG:needsVision] Result:', needsVision ? 'VISION MODE' : 'LLM MODE');
-            console.log('[DEBUG:needsVision] ----------------------------------------');
+    /**
+     * Update wake word for analytics context.
+     */
+    setWakeWord(word: string) {
+        this.wakeWord = word;
+        debugLog('OllamaService', `wakeWord updated to: ${word}`);
+    }
+
+    /**
+     * Get analytics options with current context.
+     */
+    private getAnalyticsOptions(extra: Record<string, any> = {}): Record<string, any> {
+        return {
+            speechLang: this.speechLang,
+            wakeWord: this.wakeWord,
+            ...extra
+        };
+    }
+
+    /**
+     * Check if command needs vision processing using LLM-based intent classification.
+     * Supports any language - the LLM understands the semantic meaning.
+     */
+    private async classifyVisionIntent(command: string, traceId: string): Promise<boolean> {
+        // Fast path: check for obvious English keywords first (optimization)
+        const lowerCommand = command.toLowerCase();
+        const quickMatch = ['click', 'scroll', 'button', 'icon', 'folder', 'menu'].some(kw => lowerCommand.includes(kw));
+
+        if (quickMatch) {
+            if (DEBUG) console.log(`[DEBUG:classifyVisionIntent] Quick match for vision intent [TraceID: ${traceId}]`);
+            return true;
         }
 
-        return needsVision;
+        // Use LLM for semantic classification (works in any language)
+        try {
+            const response = await fetch('/api/ollama/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Trace-ID': traceId },
+                body: JSON.stringify({
+                    model: this.model,
+                    messages: [{
+                        role: 'user',
+                        content: `Classify this command. Does it require SEEING the screen to execute?
+
+Commands needing vision: clicking on elements, finding buttons, scrolling to content, locating icons/folders
+Commands NOT needing vision: open app, type text, keyboard shortcuts, set volume, change language
+
+Command: "${command}"
+
+Reply with ONLY one word: VISION or TEXT`
+                    }],
+                    temperature: 0,
+                    max_tokens: 10
+                }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const classification = data.choices?.[0]?.message?.content?.trim().toUpperCase();
+                const isVision = classification === 'VISION';
+
+                if (DEBUG) {
+                    console.log(`[DEBUG:classifyVisionIntent] LLM classification: ${classification} → ${isVision ? 'VISION MODE' : 'TEXT MODE'} [TraceID: ${traceId}]`);
+                }
+
+                return isVision;
+            }
+        } catch (error) {
+            if (DEBUG) console.log(`[DEBUG:classifyVisionIntent] Classification failed, defaulting to TEXT mode [TraceID: ${traceId}]`);
+        }
+
+        return false; // Default to text mode if classification fails
     }
 
     get live() {
@@ -140,32 +212,48 @@ export class OllamaService {
         };
     }
 
-    private async processTextCommand(text: string) {
-        if (!this.isConnected || !this.onmessage) return;
+    async processTextCommand(text: string): Promise<void> {
+        if (!this.isConnected || !this.onmessage || !text) return;
 
-        if (DEBUG) {
-            console.log('[DEBUG:processTextCommand] ========================================');
-            console.log('[DEBUG:processTextCommand] RECEIVED TEXT:', text);
-            console.log('[DEBUG:processTextCommand] isConnected:', this.isConnected);
-            console.log('[DEBUG:processTextCommand] enableVision:', this.enableVision);
-            console.log('[DEBUG:processTextCommand] visionService:', !!this.visionService);
+        // Generate Trace ID for this command execution
+        const traceId = crypto.randomUUID().substring(0, 8); // Short ID for readability
+        debugLog('processTextCommand', `Processing: "${text}" [TraceID: ${traceId}]`);
+
+        // Mask PII before sending to remote LLM (always-on)
+        const maskResult = maskingService.maskText(text);
+        const maskedText = maskResult.masked;
+
+        if (maskResult.hasPII) {
+            debugLog('processTextCommand', `PII detected and masked: ${maskResult.detections.map(d => d.type).join(', ')} [TraceID: ${traceId}]`);
+            console.log(`[MASK:${traceId}] Original: "${text}" → Masked: "${maskedText}"`);
         }
 
-        console.log(`OllamaService: Processing command: "${text}"`);
+        // Check for vision keywords first (use original text for keyword matching)
+        if (this.enableVision && await this.classifyVisionIntent(text, traceId)) {
+            debugLog('processTextCommand', `Vision intent detected: "${text}" [TraceID: ${traceId}]`);
 
-        // Check if this needs vision processing
-        const needsVisionProcessing = this.enableVision && this.visionService && this.needsVision(text);
+            // Initialize VisionService if needed
+            if (!this.visionService) {
+                this.visionService = new VisionService({
+                    apiKey: this.apiKey, // Re-use same key or config
+                    baseUrl: this.baseUrl,
+                    model: this.model
+                });
+                debugLog('processTextCommand', `VisionService initialized lazily [TraceID: ${traceId}]`);
+            }
 
-        if (DEBUG) {
-            console.log('[DEBUG:processTextCommand] Routing decision:', needsVisionProcessing ? 'VISION' : 'LLM');
+            // Use masked text for vision LLM
+            const action = await this.visionService.processWithVision(maskedText, traceId);
+            if (action) {
+                await this.visionService.executeAction(action, traceId);
+                analytics.trackCommand(maskedText, action.action, true, this.getAnalyticsOptions({ toolCall: action, traceId }));
+                return;
+            }
+            // Fallback to standard flow if vision fails or doesn't return an action
+            debugLog('processTextCommand', `Vision processing did not return an action, falling back to LLM [TraceID: ${traceId}]`);
         }
 
-        if (needsVisionProcessing) {
-            console.log(`OllamaService: Using VISION mode for "${text}"`);
-            await this.processWithVision(text);
-            return;
-        }
-
+        console.log(`OllamaService: Sending to Ollama [TraceID: ${traceId}]: "${maskedText}"`);
 
         try {
             // Use backend proxy to avoid CORS
@@ -173,6 +261,7 @@ export class OllamaService {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-Trace-ID': traceId, // Pass traceId in header
                 },
                 body: JSON.stringify({
                     model: this.model,
@@ -202,9 +291,11 @@ BEHAVIOR:
 - For "type/write X" → keystrokes with X
 - For "go to next field" → shortcut tab
 - Use full app names (e.g., "Microsoft Outlook" not "Outlook")
+- Numbers/equations (e.g., "3x3", "equals", "+", "-") → keystrokes (user is typing into active app)
+- NEVER compute math - just type it as keystrokes
 - NO explanations, ONLY JSON`
                         },
-                        { role: 'user', content: text }
+                        { role: 'user', content: maskedText }
                     ],
                     temperature: 0.1,
                     max_tokens: 500  // Increased from 200 to prevent truncation
@@ -239,111 +330,80 @@ BEHAVIOR:
                         console.log('[DEBUG:LLM] JSON string to parse:', jsonStr);
                     }
 
-                    // Try to parse, with repair logic for truncated responses
-                    let parsed;
-                    try {
-                        parsed = JSON.parse(jsonStr);
-                    } catch (e) {
-                        // Attempt to repair common truncation issues
-                        if (DEBUG) console.log('[DEBUG:LLM] Initial parse failed, attempting repair...');
+                    const parsed = JSON.parse(jsonStr);
+                    debugLog('processTextCommand', 'Successfully parsed JSON:', parsed);
 
-                        let repairedJson = jsonStr;
+                    // Add traceId to the parsed object for downstream use if needed, or pass separately
+                    this.handleParsedResponse(parsed, maskedText, traceId);
 
-                        // Count braces
-                        const openBraces = (repairedJson.match(/{/g) || []).length;
-                        const closeBraces = (repairedJson.match(/}/g) || []).length;
-
-                        // Try to close unclosed strings and add missing closing braces
-                        if (openBraces > closeBraces) {
-                            // Check if string is unclosed (odd number of quotes after last colon)
-                            const lastColon = repairedJson.lastIndexOf(':');
-                            if (lastColon > -1) {
-                                const afterColon = repairedJson.substring(lastColon + 1);
-                                const quoteCount = (afterColon.match(/"/g) || []).length;
-                                if (quoteCount % 2 === 1) {
-                                    repairedJson += '"';
-                                    if (DEBUG) console.log('[DEBUG:LLM] Closed unclosed string');
-                                }
-                            }
-                            // Add missing closing braces
-                            for (let i = 0; i < openBraces - closeBraces; i++) {
-                                repairedJson += '}';
-                            }
-                            if (DEBUG) console.log('[DEBUG:LLM] Repaired JSON:', repairedJson);
-                        }
-
-                        try {
-                            parsed = JSON.parse(repairedJson);
-                        } catch (e2) {
-                            // Still failed - throw original error
-                            throw e;
-                        }
-                    }
-
-                    if (DEBUG) {
-                        console.log('[DEBUG:LLM] Parsed JSON:', JSON.stringify(parsed, null, 2));
-                    }
-
-                    this.handleParsedResponse(parsed, text);
-                } catch (parseError) {
-                    if (DEBUG) {
-                        console.log('[DEBUG:LLM] JSON parse failed:', parseError);
-                        console.log('[DEBUG:LLM] Falling back to text response');
-                    }
-                    // If not valid JSON, treat as text response
-                    this.simulateResponse(content);
-                    // Track as text response (not necessarily error unless LLM truly failed)
-                    analytics.trackCommand(text, 'speak:fallback', true, { parsedIntent: content });
+                } catch (e: any) {
+                    console.error('OllamaService: Failed to parse JSON response', e);
+                    debugLog('processTextCommand', 'JSON parse error. Raw content:', content);
+                    this.simulateResponse("I'm having trouble understanding the response format.");
+                    analytics.trackCommand(maskedText, 'error_json_parse', false, this.getAnalyticsOptions({ error: e.message, rawContent: content, traceId }));
                 }
+            } else {
+                debugLog('processTextCommand', 'No content returned from LLM');
+                analytics.trackCommand(maskedText, 'error_empty_response', false, this.getAnalyticsOptions({ traceId }));
             }
-        } catch (error) {
-            console.error("OllamaService: API error", error);
-            this.simulateResponse(`Sorry, I couldn't process "${text}". Please try again.`);
-            // Track failure
-            analytics.trackCommand(text, 'error:api_failed', false, { error: error.message });
+
+        } catch (error: any) {
+            console.error('OllamaService Error:', error);
+            debugLog('processTextCommand', 'API Request failed:', error);
+            // Fallback - maybe simple keyword matching?
+            analytics.trackCommand(maskedText, 'error_api', false, this.getAnalyticsOptions({ error: error.message, traceId }));
         }
     }
 
-    private handleParsedResponse(parsed: any, originalText: string) {
+    private handleParsedResponse(parsed: any, originalText: string, traceId?: string) {
+        if (!parsed || !parsed.action) {
+            console.warn('OllamaService: Invalid parsed response', parsed);
+            return;
+        }
+
         if (DEBUG) {
             console.log('[DEBUG:handleParsedResponse] ----------------------------------------');
             console.log('[DEBUG:handleParsedResponse] Original text:', originalText);
             console.log('[DEBUG:handleParsedResponse] Parsed action:', parsed.action);
             console.log('[DEBUG:handleParsedResponse] Parsed data:', parsed);
+            console.log('[DEBUG:handleParsedResponse] TraceID:', traceId);
         }
 
-        // Track success
-        analytics.trackCommand(originalText, parsed.action, true, {
-            parsedIntent: parsed.action,
-            toolCall: parsed
-        });
+        // Track successful parsing (but execution tracking happens inside executeAction)
 
+        // Execute the action
         if (parsed.action === 'open_app' && parsed.app) {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: openApp tool call');
-            this.simulateToolCall('openApp', { appId: parsed.app });
+            // Execute tool call via backend
+            this.executeAction('openApp', { appId: parsed.app }, traceId);
+
         } else if (parsed.action === 'close_app' && parsed.app) {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: closeApp tool call');
-            this.simulateToolCall('closeApp', { appId: parsed.app });
+            this.executeAction('closeApp', { appId: parsed.app }, traceId);
+
         } else if (parsed.action === 'shortcut' && parsed.keys) {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: shortcut execution');
-            // Execute shortcut via backend
-            this.executeAction('shortcut', { keys: parsed.keys });
+            // Execute shortcut
+            this.executeAction('shortcut', { keys: parsed.keys }, traceId);
+
         } else if (parsed.action === 'keystrokes' && parsed.keys) {
+            // Type text
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: keystrokes execution');
-            // Type keystrokes via backend
-            this.executeAction('keystrokes', { keys: parsed.keys });
+            this.executeAction('keystrokes', { keys: parsed.keys }, traceId);
+
         } else if (parsed.action === 'open_path' && parsed.path) {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: open_path execution');
-            // Open file or folder via backend
-            this.executeAction('open_path', { path: parsed.path });
-        } else if (parsed.action === 'click' && (parsed.x !== undefined || parsed.element)) {
+            // Open path
+            this.executeAction('open_path', { path: parsed.path }, traceId);
+
+        } else if (parsed.action === 'click') {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: click execution');
             // Click at coordinates or element
-            this.executeAction('click', { x: parsed.x, y: parsed.y, button: parsed.button || 'left' });
+            this.executeAction('click', { x: parsed.x, y: parsed.y, button: parsed.button || 'left' }, traceId);
         } else if (parsed.action === 'scroll' && parsed.direction) {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: scroll execution');
             // Scroll in direction
-            this.executeAction('scroll', { direction: parsed.direction, amount: parsed.amount || 3 });
+            this.executeAction('scroll', { direction: parsed.direction, amount: parsed.amount || 3 }, traceId);
         } else if (parsed.action === 'speak' && parsed.text) {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: speak response');
             this.simulateResponse(parsed.text);
@@ -352,18 +412,18 @@ BEHAVIOR:
             // Dispatch event for App.tsx to handle
             window.dispatchEvent(new CustomEvent('voiceos:set_nickname', { detail: { name: parsed.name } }));
             this.simulateResponse(`Wake word changed to ${parsed.name}`);
-            analytics.trackCommand(originalText, 'set_nickname', true, { toolCall: { name: parsed.name } });
+            analytics.trackCommand(originalText, 'set_nickname', true, this.getAnalyticsOptions({ toolCall: { name: parsed.name }, traceId }));
         } else if (parsed.action === 'switch_language' && parsed.lang) {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → Routing to: switch_language');
             // Dispatch event for App.tsx to handle
             window.dispatchEvent(new CustomEvent('voiceos:switch_language', { detail: { lang: parsed.lang } }));
             this.simulateResponse(`Language switched to ${parsed.lang}`);
-            analytics.trackCommand(originalText, 'switch_language', true, { toolCall: { lang: parsed.lang } });
+            analytics.trackCommand(originalText, 'switch_language', true, this.getAnalyticsOptions({ toolCall: { lang: parsed.lang }, traceId }));
         } else {
             if (DEBUG) console.log('[DEBUG:handleParsedResponse] → No matching action, using fallback');
             this.simulateResponse(`I heard "${originalText}" but I'm not sure how to handle it.`);
             // Track fallback as partial failure? Or just unknown action
-            analytics.trackCommand(originalText, 'unknown_action', false, { error: 'No matching action handler' });
+            analytics.trackCommand(originalText, 'unknown_action', false, this.getAnalyticsOptions({ error: 'No matching action handler', traceId }));
         }
     }
 
@@ -394,12 +454,16 @@ BEHAVIOR:
         }
     }
 
-    private async executeAction(action: string, data: any) {
+
+
+    private async executeAction(action: string, data: any, traceId?: string) {
         try {
-            console.log(`OllamaService: Executing ${action}`, data);
             const response = await fetch('/api/execute', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(traceId ? { 'X-Trace-ID': traceId } : {})
+                },
                 body: JSON.stringify({ action, params: data })
             });
 
@@ -407,18 +471,18 @@ BEHAVIOR:
                 const result = await response.json();
                 console.log(`OllamaService: ${action} executed`, result);
                 // Track actual execution success
-                analytics.trackCommand(`exec:${action}`, action, true, { toolCall: result });
+                analytics.trackCommand(`exec:${action}`, action, true, this.getAnalyticsOptions({ toolCall: result, traceId }));
             } else {
                 console.error(`OllamaService: ${action} failed`, response.status);
                 this.simulateResponse(`Failed to execute ${action}`);
                 // Track execution failure
-                analytics.trackCommand(`exec:${action}`, action, false, { error: `HTTP ${response.status}` });
+                analytics.trackCommand(`exec:${action}`, action, false, this.getAnalyticsOptions({ error: `HTTP ${response.status}`, traceId }));
             }
         } catch (error: any) {
             console.error(`OllamaService: ${action} error`, error);
             this.simulateResponse(`Error executing ${action}`);
             // Track execution error
-            analytics.trackCommand(`exec:${action}`, action, false, { error: error.message });
+            analytics.trackCommand(`exec:${action}`, action, false, this.getAnalyticsOptions({ error: error.message, traceId }));
         }
     }
 
