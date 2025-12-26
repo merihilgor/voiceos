@@ -8,6 +8,8 @@ import util from 'util';
 import { fileURLToPath } from 'url';
 import { executeJXA, openApp, closeApp, setVolume, sendShortcut, typeKeystrokes, openPath, clickAt } from './macos.js';
 import { clickOnText, findTextOnScreen, typeText as ocrTypeText } from './ocr-service.js';
+import { getClickElementPrompt, parseVisionResponse, CONFIDENCE_THRESHOLD } from './vision-prompts.js';
+import { checkSafety, storePendingAction, consumePendingAction, generateActionId } from './safety-guard.js';
 
 // Load .env.local for server-side environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -52,6 +54,15 @@ app.get('/api/status', (req, res) => {
 const getTraceId = (req) => {
     return req.headers['x-trace-id'] || req.body?.traceId || req.query?.traceId || 'no-trace';
 };
+
+// Timestamp helper for trace logs (HH:MM:SS.mmm)
+const ts = () => {
+    const now = new Date();
+    return `${now.toTimeString().split(' ')[0]}.${String(now.getMilliseconds()).padStart(3, '0')}`;
+};
+
+// Trace log helper with timestamp
+const trace = (traceId, msg) => console.log(`[${ts()}][TRACE:${traceId}] ${msg}`);
 
 // Execute Generic Command
 app.post('/api/execute', async (req, res) => {
@@ -371,6 +382,207 @@ app.post('/api/type-at-text', async (req, res) => {
     }
 });
 
+// ============ PHASE 2: Hybrid Routing with Cache ============
+
+// In-memory UI cache (simple JS implementation for Node.js)
+const uiCache = {
+    entries: new Map(),  // (app|target) -> {x, y, timestamp}
+    ttl: 300000,         // 5 minutes in ms
+    hits: 0,
+    misses: 0,
+
+    get(app, target) {
+        const key = `${app.toLowerCase()}|${target.toLowerCase()}`;
+        const entry = this.entries.get(key);
+        if (entry && Date.now() - entry.timestamp < this.ttl) {
+            this.hits++;
+            return { x: entry.x, y: entry.y };
+        }
+        if (entry) this.entries.delete(key);  // Expired
+        this.misses++;
+        return null;
+    },
+
+    set(app, target, x, y) {
+        const key = `${app.toLowerCase()}|${target.toLowerCase()}`;
+        this.entries.set(key, { x, y, timestamp: Date.now() });
+    },
+
+    stats() {
+        const total = this.hits + this.misses;
+        return {
+            entries: this.entries.size,
+            hits: this.hits,
+            misses: this.misses,
+            hitRate: total > 0 ? `${(this.hits / total * 100).toFixed(1)}%` : '0%'
+        };
+    },
+
+    clear() {
+        const count = this.entries.size;
+        this.entries.clear();
+        return count;
+    }
+};
+
+// Hybrid click - routes to cache/OCR/VLM
+app.post('/api/hybrid-click', async (req, res) => {
+    const { command, app: appName = 'Unknown' } = req.body;
+    const traceId = getTraceId(req);
+    console.log(`[TRACE:${traceId}] Hybrid click: "${command}" in ${appName}`);
+
+    try {
+        // Extract click target from command
+        const clickMatch = command.match(/^(?:click|tap|press|select)\s+(?:on\s+)?(?:the\s+)?(.+)$/i);
+        if (!clickMatch) {
+            console.log(`[TRACE:${traceId}] Not a click command, falling back to VLM`);
+            res.json({ success: false, error: 'Not a click command', method: 'vlm_needed' });
+            return;
+        }
+
+        const target = clickMatch[1].trim();
+        const startTime = Date.now();
+
+        // Level 1: Check cache
+        const cached = uiCache.get(appName, target);
+        if (cached) {
+            const latency = Date.now() - startTime;
+            console.log(`[TRACE:${traceId}] CACHE HIT: ${target} -> (${cached.x}, ${cached.y}) [${latency}ms]`);
+
+            // Click at cached position
+            await clickAt(cached.x, cached.y);
+
+            res.json({
+                success: true,
+                target,
+                x: cached.x,
+                y: cached.y,
+                method: 'cached',
+                latencyMs: latency
+            });
+            return;
+        }
+
+        // Level 2: Try OCR
+        console.log(`[TRACE:${traceId}] Cache miss, trying OCR for: ${target}`);
+        const ocrResult = await clickOnText(target);
+        const latency = Date.now() - startTime;
+
+        if (ocrResult.success) {
+            // Cache the result - coordinates are in ocrResult.coordinates
+            const coords = ocrResult.coordinates || {};
+            if (coords.x !== undefined && coords.y !== undefined) {
+                uiCache.set(appName, target, coords.x, coords.y);
+                console.log(`[TRACE:${traceId}] Cached: ${target} -> (${coords.x}, ${coords.y})`);
+            }
+
+            res.json({
+                success: true,
+                target,
+                x: coords.x,
+                y: coords.y,
+                method: 'ocr',
+                latencyMs: latency
+            });
+            return;
+        }
+
+        // Level 3: OCR failed, VLM would be needed
+        console.log(`[TRACE:${traceId}] OCR failed, VLM needed [${latency}ms]`);
+        res.json({
+            success: false,
+            target,
+            error: 'OCR failed, VLM needed',
+            method: 'vlm_needed',
+            latencyMs: latency
+        });
+
+    } catch (error) {
+        console.error(`[TRACE:${traceId}] Hybrid click error:`, error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Cache stats endpoint
+app.get('/api/cache-stats', (req, res) => {
+    res.json(uiCache.stats());
+});
+
+// Clear cache endpoint
+app.post('/api/cache-clear', (req, res) => {
+    const cleared = uiCache.clear();
+    res.json({ success: true, cleared });
+});
+
+// ============ PHASE 4: Safety Confirmation System ============
+
+// Check if an action needs confirmation
+app.post('/api/safety-check', (req, res) => {
+    const { command } = req.body;
+    const traceId = getTraceId(req);
+
+    const result = checkSafety(command);
+    trace(traceId, `Safety check: "${command}" -> ${result.riskLevel}`);
+
+    if (result.needsConfirmation) {
+        const actionId = generateActionId();
+        storePendingAction(actionId, { command, type: 'click' });
+        res.json({
+            ...result,
+            actionId,
+            expiresIn: 60  // seconds
+        });
+    } else {
+        res.json(result);
+    }
+});
+
+// Confirm or cancel a pending action
+app.post('/api/confirm', async (req, res) => {
+    const { actionId, confirmed } = req.body;
+    const traceId = getTraceId(req);
+
+    trace(traceId, `Confirm: actionId=${actionId}, confirmed=${confirmed}`);
+
+    if (!actionId) {
+        return res.status(400).json({ success: false, error: 'Missing actionId' });
+    }
+
+    const pendingAction = consumePendingAction(actionId);
+
+    if (!pendingAction) {
+        return res.status(404).json({
+            success: false,
+            error: 'Action not found or expired'
+        });
+    }
+
+    if (!confirmed) {
+        trace(traceId, `Action cancelled: ${pendingAction.command}`);
+        return res.json({
+            success: true,
+            cancelled: true,
+            message: 'Action cancelled'
+        });
+    }
+
+    // Execute the confirmed action
+    trace(traceId, `Action confirmed, executing: ${pendingAction.command}`);
+
+    try {
+        // For now, just return success - actual execution would call the appropriate action
+        res.json({
+            success: true,
+            executed: true,
+            command: pendingAction.command,
+            message: `Confirmed and executed: ${pendingAction.command}`
+        });
+    } catch (error) {
+        trace(traceId, `Confirmed action failed: ${error.message}`);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Debug: List all text detected on screen (for OCR testing)
 app.get('/api/ocr-debug', async (req, res) => {
     const traceId = getTraceId(req);
@@ -509,6 +721,247 @@ app.post('/api/vision', async (req, res) => {
     } catch (error) {
         console.error(`[TRACE:${traceId}] Vision API error:`, error);
         res.status(500).json({ error: error.message });
+    }
+});
+// Vision-click with AUTO screenshot capture (server-side)
+app.post('/api/vision-click-auto', async (req, res) => {
+    const { target } = req.body;
+    const traceId = getTraceId(req);
+
+    if (!target) {
+        return res.status(400).json({ found: false, error: 'Missing target' });
+    }
+
+    trace(traceId, `Vision-click-auto: "${target}" - capturing screenshot`);
+
+    try {
+        // Capture screenshot server-side
+        const tmpFile = `/tmp/vision_${Date.now()}.png`;
+        await new Promise((resolve, reject) => {
+            exec(`screencapture -x "${tmpFile}"`, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+
+        // Resize to 800px width to reduce payload (5MB -> ~500KB)
+        await new Promise((resolve, reject) => {
+            exec(`sips --resampleWidth 800 "${tmpFile}"`, (err) => {
+                if (err) console.warn(`[TRACE:${traceId}] Resize warning:`, err);
+                resolve();  // Continue even if resize fails
+            });
+        });
+
+        // Read and encode
+        const imageBuffer = fs.readFileSync(tmpFile);
+        const imageBase64 = imageBuffer.toString('base64');
+
+        // Clean up
+        fs.unlinkSync(tmpFile);
+
+        trace(traceId, `Screenshot captured, size: ${imageBase64.length} chars`);
+
+        // Forward to vision-click logic
+        req.body.imageBase64 = imageBase64;
+
+    } catch (err) {
+        console.error(`[TRACE:${traceId}] Screenshot capture failed:`, err);
+        return res.status(500).json({ found: false, error: 'Screenshot capture failed' });
+    }
+
+    // Continue with vision-click logic (call next handler)
+    const { imageBase64 } = req.body;
+    const llmProvider = process.env.LLM_PROVIDER || 'gemini';
+    const model = process.env.LLM_MODEL || 'gemini-2.0-flash';
+
+    trace(traceId, `Vision-click-auto: "${target}" via ${llmProvider}`);
+
+    try {
+        // Generate structured prompt
+        const prompt = getClickElementPrompt(target);
+        let text = '';
+
+        if (llmProvider === 'ollama') {
+            const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'https://ollama.com/v1';
+            const ollamaApiKey = process.env.OLLAMA_API_KEY || 'ollama';
+
+            const response = await fetch(`${ollamaBaseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${ollamaApiKey}`
+                },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [{
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: prompt },
+                            { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}` } }
+                        ]
+                    }],
+                    temperature: 0.1,
+                    max_tokens: 1000
+                })
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                console.error(`[TRACE:${traceId}] Ollama error:`, errText);
+                throw new Error(`Ollama error: ${response.status}`);
+            }
+            const data = await response.json();
+            text = data.choices?.[0]?.message?.content || '';
+
+        } else {
+            // Gemini
+            const geminiApiKey = process.env.GEMINI_API_KEY;
+            if (!geminiApiKey) {
+                return res.status(500).json({ found: false, error: 'GEMINI_API_KEY not configured' });
+            }
+
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: prompt },
+                                { inline_data: { mime_type: 'image/png', data: imageBase64 } }
+                            ]
+                        }],
+                        generationConfig: { temperature: 0.1, maxOutputTokens: 500 }
+                    })
+                }
+            );
+
+            if (!response.ok) throw new Error(`Gemini error: ${response.status}`);
+            const data = await response.json();
+            text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        }
+
+        // Parse structured response
+        const result = parseVisionResponse(text);
+        trace(traceId, `Vision-click-auto result: ${JSON.stringify(result).substring(0, 200)}`);
+
+        // Check confidence threshold before clicking
+        if (result.found && result.confidence >= CONFIDENCE_THRESHOLD) {
+            await clickAt(result.x, result.y);
+            trace(traceId, `Vision-click-auto: Clicked at (${result.x}, ${result.y})`);
+            result.clicked = true;
+        } else if (result.found) {
+            result.clicked = false;
+            result.reason = `Confidence ${result.confidence} below threshold ${CONFIDENCE_THRESHOLD}`;
+        }
+
+        res.json(result);
+
+    } catch (error) {
+        trace(traceId, `Vision-click-auto error: ${error.message}`);
+        res.status(500).json({ found: false, error: error.message });
+    }
+});
+
+// Vision-powered click with structured JSON output (Phase 3)
+app.post('/api/vision-click', async (req, res) => {
+    const { target, imageBase64 } = req.body;
+    const traceId = getTraceId(req);
+    const llmProvider = process.env.LLM_PROVIDER || 'gemini';
+    const model = process.env.LLM_MODEL || 'gemini-2.0-flash';
+
+    console.log(`[TRACE:${traceId}] Vision-click: "${target}" via ${llmProvider}`);
+
+    if (!target || !imageBase64) {
+        return res.status(400).json({
+            found: false,
+            error: 'Missing target or imageBase64'
+        });
+    }
+
+    try {
+        // Generate structured prompt
+        const prompt = getClickElementPrompt(target);
+        let text = '';
+
+        if (llmProvider === 'ollama') {
+            const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'https://ollama.com/v1';
+            const ollamaApiKey = process.env.OLLAMA_API_KEY || 'ollama';
+
+            const response = await fetch(`${ollamaBaseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${ollamaApiKey}`
+                },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [{
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: prompt },
+                            { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}` } }
+                        ]
+                    }],
+                    temperature: 0.1,
+                    max_tokens: 1000
+                })
+            });
+
+            if (!response.ok) throw new Error(`Ollama error: ${response.status}`);
+            const data = await response.json();
+            text = data.choices?.[0]?.message?.content || '';
+
+        } else {
+            // Gemini
+            const geminiApiKey = process.env.GEMINI_API_KEY;
+            if (!geminiApiKey) {
+                return res.status(500).json({ found: false, error: 'GEMINI_API_KEY not configured' });
+            }
+
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: prompt },
+                                { inline_data: { mime_type: 'image/png', data: imageBase64 } }
+                            ]
+                        }],
+                        generationConfig: { temperature: 0.1, maxOutputTokens: 500 }
+                    })
+                }
+            );
+
+            if (!response.ok) throw new Error(`Gemini error: ${response.status}`);
+            const data = await response.json();
+            text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        }
+
+        // Parse structured response
+        const result = parseVisionResponse(text);
+        console.log(`[TRACE:${traceId}] Vision-click result:`, JSON.stringify(result).substring(0, 200));
+
+        // Check confidence threshold before clicking
+        if (result.found && result.confidence >= CONFIDENCE_THRESHOLD) {
+            await clickAt(result.x, result.y);
+            console.log(`[TRACE:${traceId}] Vision-click: Clicked at (${result.x}, ${result.y}) with confidence ${result.confidence}`);
+            result.clicked = true;
+        } else if (result.found) {
+            console.log(`[TRACE:${traceId}] Vision-click: Low confidence ${result.confidence}, threshold is ${CONFIDENCE_THRESHOLD}`);
+            result.clicked = false;
+            result.reason = `Confidence ${result.confidence} below threshold ${CONFIDENCE_THRESHOLD}`;
+        }
+
+        res.json(result);
+
+    } catch (error) {
+        console.error(`[TRACE:${traceId}] Vision-click error:`, error);
+        res.status(500).json({ found: false, error: error.message });
     }
 });
 

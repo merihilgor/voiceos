@@ -13,17 +13,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New endpoints: `/api/click-text`, `/api/find-text`, `/api/type-at-text`, `/api/ocr-debug`
   - Menu bar focused search with 2x upscaling for small text
   - `server/ocr-service.js` - Vision OCR service
+- **Hybrid Routing + UI Cache** (Phase 2)
+  - `/api/hybrid-click` - Routes to cache->OCR->VLM for optimal latency
+  - UI element cache with 5-minute TTL (0ms vs 3800ms OCR latency)
+  - `/api/cache-stats` and `/api/cache-clear` endpoints
+- **Enhanced Vision Intelligence** (Phase 3)
+  - `/api/vision-click` - VLM-powered click with structured JSON output
+  - `server/vision-prompts.js` - Specialized prompts for UI element detection
+  - Confidence threshold (0.8) before auto-clicking
+- **Safety Confirmation System** (Phase 4)
+  - `/api/safety-check` - Detects destructive actions (delete, trash, format)
+  - `/api/confirm` - Confirm or cancel pending actions with 60s expiry
+  - Risk levels: low/medium/high
 
 ### Changed
 - **google-genai Migration** - Replaced deprecated `google-generativeai` with `google-genai`
   - Updated `backend/intent_parser.py` to use new Client API
   - Updated `backend/requirements.txt` with `google-genai>=1.0.0`
 
-### WIP (Work in Progress) ⚠️
-- **OCR Menu Bar Detection** - Small text like "File", "Edit" not reliably detected
-- **GDPR/PCI-DSS Text Masking** - Not fully tested
-- **Visual Screenshot Masking** - Face detection incomplete
-- **Server-side Screenshot Masking** - Menubar/dock overlays
+### Phase 5: MVP Stability & Polish (Next Sprint) 🔜
+> Backlog of WIP items to complete before Phase 6 (Android/Maestro)
+
+#### 5.1 Performance
+- [ ] **VLM Latency** - Ollama ~8.5s, target <3s. [Switch to Gemini or smaller model]
+- [ ] **Click Latency** - AppleScript ~800ms, target <50ms. [Install cliclick]
+- [ ] **Screenshot Resize** - 550ms with sips, target <200ms. [Use sharp.js]
+
+#### 5.2 OCR Improvements
+- [ ] **Menu Bar Detection** - Small text like "File", "Edit" not reliably detected
+- [ ] OCR.space API fallback
+- [ ] Tune 2x upscaling parameters
+
+#### 5.3 Privacy/Masking
+- [ ] **GDPR/PCI-DSS Text Masking** - Complete testing
+- [ ] **Visual Screenshot Masking** - Face detection incomplete
+- [ ] **Server-side Masking** - Menubar/dock overlays
+
+#### 5.4 Testing & Quality
+- [ ] Unit tests for safety-guard patterns
+- [ ] E2E test for hybrid-click flow
+- [ ] Load testing for cache performance
+
+### Phase 6: Android/Maestro Support (Deferred)
 
 ---
 
